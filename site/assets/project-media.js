@@ -207,9 +207,15 @@ function createBoardViewer(listen, onChange) {
 }
 
 function mountVideos(section, listen) {
+  let current=-1, bufferingTimer=null, disposed=false;
+  const frame=element('div','project-media-video-frame');
   const video = element('video','project-media-video');
   video.controls=true; video.playsInline=true; video.preload='metadata';
   video.setAttribute('playsinline','');
+  const buffering=element('p','project-media-video-status');
+  buffering.hidden=true;buffering.setAttribute('role','status');
+  buffering.setAttribute('aria-live','polite');
+  frame.append(video,buffering);
   const caption=element('p','project-media-caption');
   caption.setAttribute('aria-live','polite');
   const choices=element('div','project-media-video-choices');
@@ -224,20 +230,42 @@ function mountVideos(section, listen) {
     choices.append(choice);return choice;
   });
   const error=element('p','project-media-error');error.hidden=true;error.setAttribute('role','status');
-  section.append(video,caption,choices,error);
+  section.append(frame,caption,choices,error);
+  function clearBuffering() {
+    clearTimeout(bufferingTimer);bufferingTimer=null;
+    buffering.hidden=true;buffering.textContent='';
+  }
+  function showBuffering() {
+    // Metadata fetches and pauses are not playback stalls. Ignore brief waits.
+    if(disposed||video.paused||video.ended||video.error||video.readyState>=3||bufferingTimer!==null) return;
+    bufferingTimer=setTimeout(() => {
+      bufferingTimer=null;
+      if(disposed||video.paused||video.ended||video.error||video.readyState>=3) return;
+      buffering.textContent='正在缓冲…';buffering.hidden=false;
+    },250);
+  }
   function select(index) {
+    // Preserve the current time and downloaded buffer; a real error can retry.
+    if(index===current&&!video.error) return;
+    current=index;clearBuffering();
     video.pause();
     const work=videoWorks[index];
     video.poster=source(`zeemo/${work.slug}.webp`);
-    video.src=source(`zeemo/${work.slug}.mp4`);
+    video.src=source(`zeemo/${work.slug}.mp4?v=web-20261028-1`);
     video.setAttribute('aria-label',work.title);
     video.load();error.hidden=true;
     caption.textContent=`${String(index+1).padStart(2,'0')} / 03　${work.title}`;
     selectors.forEach((node,i) => node.setAttribute('aria-pressed',String(i===index)));
   }
-  listen(video,'error',() => {error.textContent='视频暂时无法播放，请切换作品后重试。';error.hidden=false;});
+  listen(video,'waiting',showBuffering);
+  listen(video,'stalled',showBuffering);
+  listen(video,'seeking',showBuffering);
+  listen(video,'canplay',() => {if(video.readyState>=3)clearBuffering();});
+  listen(video,'seeked',() => {if(video.readyState>=3)clearBuffering();});
+  ['playing','pause','ended','emptied','abort'].forEach(event => listen(video,event,clearBuffering));
+  listen(video,'error',() => {clearBuffering();error.textContent='视频暂时无法播放，请点击当前作品重试，或切换其他作品。';error.hidden=false;});
   listen(document,'visibilitychange',() => {if(document.hidden)video.pause();});
   listen(window,'pagehide',() => video.pause());
   select(0);
-  return () => {video.pause();video.removeAttribute('src');video.removeAttribute('poster');video.load();};
+  return () => {disposed=true;clearBuffering();video.pause();video.removeAttribute('src');video.removeAttribute('poster');video.load();};
 }

@@ -1,7 +1,7 @@
 import { groups } from './data.js?v=6f8b49917bc4';
 import { details } from './details.js?v=6f8b49917bc4';
 import { navigate } from './transition.js?v=6f8b49917bc4';
-import { mountProjectMedia } from './project-media.js?v=6f8b49917bc4';
+import { mountProjectMedia } from './project-media.js?v=web-20261028-1';
 import { loadProgress, startVisit, markViewed, finishVisit, isProgressPersistent } from './tree-progress.js?v=6f8b49917bc4';
 
 const parameters = new URLSearchParams(location.search);
@@ -21,6 +21,7 @@ const readLink = document.querySelector('#read-detail');
 const prompt = document.querySelector('#selection-prompt');
 const status = document.querySelector('#detail-status');
 let selected = -1;
+let detailRendered = false;
 let diagram = null;
 let flowCount = null;
 let flowReturn = null;
@@ -183,8 +184,9 @@ function renderDetail(index) {
 }
 function select(index, { updateHistory = true, animate = true } = {}) {
   if (!Number.isInteger(index) || index < -1 || index >= group.layers.length) return;
+  const changed = index !== selected || !detailRendered;
   selected = index;
-  renderDetail(index);
+  if (changed) { renderDetail(index); detailRendered = true; }
   diagram?.select(index, { animate });
   if (updateHistory) {
     const hash = index < 0 ? '#overview' : '#' + group.layers[index].id;
