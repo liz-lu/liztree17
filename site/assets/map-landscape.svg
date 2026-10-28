@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 60" fill="none">
+  <!-- A peripheral landscape vignette, separate from the geographic artwork. -->
+  <g stroke="#8c9c84" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 44C87 42 134 46 205 43M237 44C315 42 343 44 387 45M476 45C547 44 582 45 618 44M760 45C842 44 918 40 1005 43M1021 43C1080 45 1136 44 1195 46" opacity=".35"/>
+    <g opacity=".52" stroke-width=".9">
+      <path d="M100 43L99 29M98 37L92 30M99 34L105 27M117 43L119 24M119 35L112 29M119 31L125 25M129 44L128 35M131 40L135 32M89 43L86 36"/>
+      <path d="M951 42L951 12M951 34L940 24L938 16M950 27L945 15M951 31L960 20L961 14M951 21L954 11M945 29L937 25M957 24L965 21"/>
+    </g>
+    <path d="M990 42L990 30M990 38L984 33M990 35L994 29M1000 43L1003 35M1010 43L1010 38" opacity=".38"/>
+    <path d="M80 47L133 46M930 47L977 46M963 49L995 48" opacity=".21"/>
+  </g>
+</svg>

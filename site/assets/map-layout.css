@@ -1,0 +1,35 @@
+/* Match the axonometric page frame; give the single-line introduction its minimum readable width. */
+.page.map-page{display:flex;align-items:center;min-height:calc(100svh - 146px);margin:0 auto;padding:14px 0 26px}
+.map-page .map-composition{display:grid;grid-template-columns:minmax(max-content,3fr) minmax(0,7fr);column-gap:clamp(28px,3vw,56px);row-gap:28px;align-items:center;width:85.7142857vw;max-width:1440px;margin:auto}
+.map-page .map-composition .map-heading{margin:0;padding:0;text-align:left;max-width:none}
+.map-page .map-composition h1{font-size:clamp(26px,2.3vw,34px);margin:0 0 20px;white-space:nowrap}
+.map-page .map-composition .map-heading .quiet{font-size:14px;line-height:1.95;margin:0;padding:0;color:var(--ink);white-space:nowrap}
+.map-page .map-intro-copy{font-size:13px;line-height:1.95;color:var(--muted);margin-top:24px}
+.map-page .map-intro-copy p{margin:0 0 15px}
+.map-page .map-heading .text-link{margin-top:12px;color:var(--accent-strong);gap:20px}
+.map-page .map-visual{min-width:0}
+.map-page .map-composition .map-stage{width:100%;max-width:none;margin:0;min-height:0}
+.map-page .map-composition .map-actions{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 18px;padding:14px 0 0;margin:0;max-width:none}
+.map-page .map-composition .map-progress{display:block;font-size:12px;line-height:1.8;margin:0;color:var(--muted)}
+.map-page .map-progress span{color:var(--muted)}
+.map-page .map-composition #replay{font-size:12px;gap:12px;color:var(--muted);border:0}
+.map-page .map-composition #replay:hover{color:var(--accent-strong)}
+.map-page .map-landscape{grid-column:1/-1;height:46px;background:url('./map-landscape.svg') center/100% 100% no-repeat;pointer-events:none;opacity:.66}
+@media(max-width:900px){
+ .page.map-page{min-height:calc(100svh - 146px);padding:28px 0 18px}
+ .map-page .map-composition{grid-template-columns:minmax(0,1fr);width:calc(100% - 44px);max-width:640px;row-gap:26px}
+ .map-page .map-composition .map-heading{max-width:440px}
+ .map-page .map-composition h1{font-size:28px;margin-bottom:13px}
+ .map-page .map-composition .map-heading .quiet{font-size:14px;white-space:normal}
+ .map-page .map-intro-copy{margin-top:17px;font-size:13px}
+ .map-page .map-intro-copy p{margin:0 0 7px}
+ .map-page .map-intro-copy br{display:none}
+ .map-page .map-heading .text-link{margin-top:5px;font-size:14px}
+ .map-page .map-composition .map-actions{padding-top:8px}
+ .map-page .map-landscape{height:30px;margin-top:-8px}
+}
+@media(max-width:360px){
+ .map-page .map-composition{width:calc(100% - 40px)}
+ .map-page .map-composition .map-actions{gap:0 10px}
+ .map-page .map-composition .map-progress{max-width:180px}
+}

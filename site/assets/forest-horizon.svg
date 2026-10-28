@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="180" viewBox="0 0 1200 180">
+ <defs><pattern id="hatch" width="9" height="4" patternUnits="userSpaceOnUse"><path d="M0 1.6Q3 .6 9 1.5" fill="none" stroke="#f7f8f5" stroke-width=".65" opacity=".65"/></pattern></defs>
+ <g fill="none" stroke="#8c9c84" stroke-width=".9" stroke-linecap="round" opacity=".55">
+  <path d="M24 58Q167 48 291 56T545 54Q731 47 857 56T1178 57"/>
+  <path d="M156 54l-3-13m5 13l3-17m4 18l5-9m-24 9l-5-7m36 7l3-6m24 6l2-7m678 7l-5-18m8 18l3-23m2 23l8-11m-23 10l-8-6"/>
+  <path d="M1024 56l2-37m-1 20l-12-12m12 4l10-13m-9 4l-4-14m3 36l14-10m-13 16l-15-9m21-21l2-9"/>
+ </g>
+ <g fill="#385837" opacity=".5"><path d="M969 57l13-34 12 34Z"/><path d="M1036 58l9-24 10 24Z"/><path d="M1075 58l7-18 7 18Z"/></g>
+ <path d="M502 180C581 153 721 163 711 139C702 119 608 126 616 108C623 91 703 81 713 55C715 82 637 97 638 108C640 120 741 117 750 140C759 164 665 174 635 180Z" fill="#5f7d4b" opacity=".54"/>
+ <path d="M502 180C581 153 721 163 711 139C702 119 608 126 616 108C623 91 703 81 713 55C715 82 637 97 638 108C640 120 741 117 750 140C759 164 665 174 635 180Z" fill="url(#hatch)"/>
+ <g stroke="#8c9c84" stroke-width=".75" fill="none" opacity=".35"><path d="M488 178l43-12m214-20l22 3m-158-38l-18 3m120-57l18 1"/></g>
+</svg>

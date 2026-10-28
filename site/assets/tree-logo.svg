@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none" role="img" aria-labelledby="title">
+  <title id="title">卢佳丽的树形标识</title>
+  <g stroke="#35362f" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="2.1" d="M18 35 C21 29 18 24 20 19 C22 14 21 9 24 4"/>
+    <path stroke-width="1.55" d="M20 25 C15 19 10 22 5 17 M19 20 C14 16 13 10 10 6 M21 17 C26 13 31 14 35 9 M20 24 C25 20 31 22 36 18 M21 13 C18 10 17 7 17 4 M24 8 L29 5 M11 20 L8 13 M15 15 L15 10 M29 13 L30 8 M28 22 L31 16"/>
+    <path stroke-width="1.6" d="M14 36 L18 35 L21 34 L25 36"/>
+  </g>
+</svg>
