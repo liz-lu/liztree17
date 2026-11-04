@@ -115,10 +115,10 @@ export const details = {
     headline: '围绕 **AI Native** 教育产品 **1.0—2.0** 迭代，推进生成评测、课程交互与商业问题分析。',
     projects: [
       {
-        id: 'ai-feature', title: 'AI 功能迭代',
-        problem: 'AI 课堂总结偏向通用复述，缺少学生表现与薄弱点分析。',
+        id: 'ai-feature', title: 'AI Agent 讲解与课堂总结',
+        problem: 'AI Agent 的讲解与课后反馈，需要体现学生的学习差异；现有课堂总结偏向通用复述，缺少学生表现与薄弱点分析。',
         judgment: '以课堂事实约束生成，按知识点聚合证据，再输出个性化建议。',
-        action: '**独立负责 Prompt 迭代**，设计新旧 Prompt 离线对照方案，细化评分标准并开展 **6 轮**评估。',
+        action: '围绕课堂总结，**独立负责 Prompt 迭代**，设计新旧 Prompt 离线对照方案，细化评分标准并开展 **6 轮**评估。',
         outcome: '累计输出 **200 余条**评估数据，个性化评分**从良到优**（内部离线评估）。'
       },
       {

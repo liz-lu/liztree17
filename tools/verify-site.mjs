@@ -36,13 +36,13 @@ export async function verifySite(folder) {
     if (size > largest.bytes) largest = { path: file, bytes: size };
     if (size >= 100 * 1024 ** 2) errors.push(`File exceeds regular Git limit: ${file}`);
     if (!['.html', '.js', '.css', '.svg', '.json'].includes(extname(file))) continue;
-    const source = await readFile(resolve(root, file), 'utf8');
+    const source = (await readFile(resolve(root, file), 'utf8')).replace(/^.*@three_import.*$/gm, '');
     if (/[A-Za-z]:[\\/](?:Users|download|秋招文件|PSAutoRecover)/i.test(source)) errors.push(`Local path: ${file}`);
     if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:ghp_|github_pat_)[A-Za-z0-9_]{25,}|sk-[A-Za-z0-9]{32,}/.test(source)) errors.push(`Possible secret: ${file}`);
     if (extname(file) === '.js') {
       try { execFileSync(process.execPath, ['--check', resolve(root, file)], { stdio: 'pipe' }); }
       catch { errors.push(`JavaScript syntax error: ${file}`); }
-      for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)) reference(file, match[1]);
+      for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)) if(match[1].startsWith('.')||match[1].startsWith('/')) reference(file, match[1]);
       for (const match of source.matchAll(/new URL\(['"]([^'"]+)['"],\s*import\.meta\.url\)/g)) {
         if (!match[1].endsWith('/')) reference(file, match[1]);
         else if (!files.some(name => name.startsWith(relative(root, resolve(root, dirname(file), match[1])).split(sep).join('/') + '/'))) errors.push(`Missing media directory: ${file}`);

@@ -1,0 +1,89 @@
+{
+  "version": "archive-20261105-1",
+  "assets": [
+    {
+      "id": "human-hand",
+      "file": "human-hand-v1.webp",
+      "width": 1400,
+      "height": 467,
+      "temporary": false
+    },
+    {
+      "id": "robot-hand",
+      "file": "robot-hand-v1.webp",
+      "width": 1400,
+      "height": 579,
+      "temporary": false
+    },
+    {
+      "id": "runner",
+      "file": "runner-v1.webp",
+      "width": 760,
+      "height": 522,
+      "temporary": false
+    },
+    {
+      "id": "tech-hand",
+      "file": "tech-hand-v1.webp",
+      "width": 760,
+      "height": 760,
+      "temporary": false
+    },
+    {
+      "id": "statue",
+      "file": "statue-v1.webp",
+      "width": 481,
+      "height": 720,
+      "temporary": false
+    },
+    {
+      "id": "angel",
+      "file": "angel-v1.webp",
+      "width": 720,
+      "height": 497,
+      "temporary": false
+    },
+    {
+      "id": "digital-life",
+      "file": "digital-life-v1.webp",
+      "width": 720,
+      "height": 707,
+      "temporary": false
+    },
+    {
+      "id": "coin-dark",
+      "file": "coin-dark-v1.webp",
+      "width": 480,
+      "height": 480,
+      "temporary": false
+    },
+    {
+      "id": "coin-gold",
+      "file": "coin-gold-v1.webp",
+      "width": 480,
+      "height": 480,
+      "temporary": false
+    },
+    {
+      "id": "coin-silver",
+      "file": "coin-silver-v1.webp",
+      "width": 480,
+      "height": 480,
+      "temporary": false
+    },
+    {
+      "id": "runner-cycle",
+      "file": "runner-cycle-v2.webp",
+      "width": 1774,
+      "height": 887,
+      "temporary": false
+    },
+    {
+      "id": "tech-touch",
+      "file": "tech-touch-v1.webp",
+      "width": 960,
+      "height": 720,
+      "temporary": false
+    }
+  ]
+}
