@@ -1,4 +1,4 @@
-import { geography } from './geometry.js?v=archive-20261105-1';
+import { geography } from './geometry.js?v=archive-20261108-loading-1';
 
 // Screen-space coordinates retained from assets/map.js and the user's original map.
 // Gansu is a province-level illustration, not a birthplace or a geocoded city.

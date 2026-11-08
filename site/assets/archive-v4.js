@@ -1,9 +1,10 @@
-import { mountWebPreview } from './archive-web-preview.js?v=archive-20261105-1';
-import { groups } from './data.js?v=archive-20261105-1';
-import { details } from './details.js?v=archive-20261105-1';
-import { mountProjectMedia } from './project-media.js?v=archive-20261105-1';
-import { integrations } from './archive-integrations.js?v=archive-20261105-1';
-import { mountMicrographics } from './archive-micrographics.js?v=archive-20261105-1';
+import { mountWebPreview } from './archive-web-preview.js?v=archive-20261108-loading-1';
+import { groups } from './data.js?v=archive-20261108-loading-1';
+import { details } from './details.js?v=archive-20261108-loading-1';
+import { mountProjectMedia } from './project-media.js?v=archive-20261108-loading-1';
+import { integrations } from './archive-integrations.js?v=archive-20261108-loading-1';
+import { mountMicrographics } from './archive-micrographics.js?v=archive-20261108-loading-1';
+import { mountProgressiveTree } from './archive-loading.js?v=archive-20261108-loading-1';
 mountMicrographics();
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -22,6 +23,9 @@ let selectedNote = '';
 let disposedMedia = [], readerState = null, bodyScroll = null, searchTrigger = null;
 let previousRestoration = history.scrollRestoration, restoreScrollTimer = 0;
 const reader = $('#reader-dialog'), search = $('#search-dialog'), scrollArea = $('#reader-scroll');
+const hero = $('#prologue-visual');
+Promise.all($$('img',hero).map(img=>img.decode())).then(()=>hero.classList.add('hands-ready')).catch(()=>{});
+new IntersectionObserver(([entry])=>hero.classList.toggle('hero-offscreen',!entry.isIntersecting)).observe(hero);
 
 function node(tag, className, text) {
   const el = document.createElement(tag);
@@ -325,9 +329,9 @@ function scheduleLines(kind){
 }
 function fallbackAnchors(kind,host){
   if(kind==='tree'){
-    // Pixel anchors measured on the existing 1040x960 render, including contain letterboxing.
-    const fit=Math.min(host.clientWidth/1040,host.clientHeight/960),w=1040*fit,h=960*fit,ox=(host.clientWidth-w)/2,oy=(host.clientHeight-h)/2;
-    return Object.fromEntries(Object.entries({campus:[.67,.47],internships:[.29,.34],projects:[.64,.22],outlook:[.55,.1],trunk:[.49,.65],roots:[.48,.83]}).map(([id,[u,v]])=>[id,{u:(ox+u*w)/host.clientWidth,v:(oy+v*h)/host.clientHeight,visible:true}]));
+    // Real anchors from the mature model poster, including contain letterboxing.
+    const fit=Math.min(host.clientWidth/779,host.clientHeight/975),w=779*fit,h=975*fit,ox=(host.clientWidth-w)/2,oy=(host.clientHeight-h)/2;
+    return Object.fromEntries(Object.entries({campus:[.60561,.44065],internships:[.37639,.41557],projects:[.59308,.31142],outlook:[.50752,.21784],trunk:[.49775,.57592],roots:[.49941,.69096]}).map(([id,[u,v]])=>[id,{u:(ox+u*w)/host.clientWidth,v:(oy+v*h)/host.clientHeight,visible:true}]));
   }
   const width=host.clientWidth,height=host.clientHeight,svgHeight=width*560/960,top=(height-svgHeight)/2;
   return Object.fromEntries(Object.entries({gansu:[473.8,276.6],chongqing:[506.2,371],shenzhen:[595.5,472.9],beijing:[623.3,220.9]}).map(([id,[x,y]])=>[id,{u:x/960,v:(top+y/560*svgHeight)/height,visible:true}]));
@@ -416,8 +420,26 @@ document.addEventListener('visibilitychange',syncMotion);reduced.addEventListene
 async function attachModule(kind,path){
   if(!path)return;
   const host=$(`#${kind==='tree'?'tree':'location'}-scene`);const original=[...host.childNodes];
+  if(kind==='tree'){
+    mountProgressiveTree(host,async(mount,lifecycle)=>{
+      let module;
+      try{module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261108-loading-1',import.meta.url)).href);}
+      catch(error){error.reloadPage=true;throw error;}
+      if(lifecycle.signal.aborted)throw new Error('Tree load cancelled');
+      return module.createTree(mount,{
+        ...lifecycle,palette,reducedMotion:reduced.matches,showControls:false,
+        onSelect:id=>selectBranch(id,true),onNoteSelect:id=>selectNote(id),
+        onAnchors:anchors=>{if(host.dataset.integrated==='true'){sceneAnchors.tree=anchors;scheduleLines('tree');}}
+      });
+    },{
+      onReset(){delete controllers.tree;sceneAnchors.tree=null;$('#tree-motion').disabled=true;scheduleLines('tree');},
+      onReady(controller){controllers.tree=controller;$('#tree-motion').disabled=false;if(selectedBranch)controller.select(selectedBranch);controller.resize();syncMotion();scheduleLines('tree');},
+      onError(error){delete controllers.tree;sceneAnchors.tree=null;$('#tree-motion').disabled=true;scheduleLines('tree');console.warn('Tree keeps its readable poster:',error.message);}
+    });
+    return;
+  }
   try{
-    const module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261105-1',import.meta.url)).href);
+    const module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261108-loading-1',import.meta.url)).href);
     host.replaceChildren();
     const controller=await module[kind==='tree'?'createTree':'createLocation'](host,{
       palette,reducedMotion:reduced.matches,showControls:false,
@@ -436,29 +458,29 @@ async function attachModule(kind,path){
 async function attachVisuals(path){
   if(!path)return;
   try{
-    const url=new URL(path,new URL('./archive-integrations.js?v=archive-20261105-1',import.meta.url));const response=await fetch(url);if(!response.ok)throw new Error('Visual manifest unavailable');
+    const url=new URL(path,new URL('./archive-integrations.js?v=archive-20261108-loading-1',import.meta.url));const response=await fetch(url,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Visual manifest unavailable');
     const manifest=await response.json();const assets=Array.isArray(manifest)?manifest:manifest.assets;
     if(!Array.isArray(assets))throw new Error('Visual manifest needs assets array');
     const readyAssets=assets.filter(a=>!a.temporary);
-    if(['human-hand','robot-hand'].every(id=>readyAssets.some(a=>a.id===id))){
-      const hero=$('#prologue-visual');const motion=await import(new URL('motion.js?v=archive-20261105-1',url));
-      hero.replaceChildren();hero.classList.add('has-assets','hands-scene');
-      visualControllers.push(motion.createVisual(hero,{kind:'hands',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));
+    // The hero is already in HTML. Decorative animation is an independent enhancement.
+    const animated=(async()=>{
+      const motion=await import(new URL('motion.js?v=archive-20261108-loading-1',url));
       const runner=$('[data-visual-slot="runner"]');if(runner){runner.replaceChildren();visualControllers.push(motion.createVisual(runner,{kind:'runner',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));}
       const touch=$('[data-visual-slot="touch"]');if(touch&&readyAssets.some(a=>a.id==='tech-touch')){touch.replaceChildren();visualControllers.push(motion.createVisual(touch,{kind:'touch',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));}
-    }
-    for(const asset of readyAssets){
+    })();
+    const stickers=readyAssets.map(async asset=>{
       // D supplies transparent collage artwork; placement is owned by A.
       const slot=asset.id==='statue'?'growth-sticker':asset.id;
-      if(!['growth-sticker','hero-hands','angel','digital-life','coin-dark','coin-gold','coin-silver'].includes(slot))continue;
-      const host=asset.id==='hero-hands'?$('#prologue-visual'):$(`[data-visual-slot="${slot}"]`);
-      if(!host||!asset.file)continue;
-      const source=new URL(asset.file,url);const isVideo=/\.(mp4|webm)$/i.test(source.pathname),el=node(isVideo?'video':'img');el.src=source.href;
+      if(!['growth-sticker','angel','digital-life','coin-dark','coin-gold','coin-silver'].includes(slot))return;
+      const host=$(`[data-visual-slot="${slot}"]`);
+      if(!host||!asset.file||host.querySelector('img'))return;
+      const source=new URL(asset.file,url);const isVideo=/\.(mp4|webm)$/i.test(source.pathname),el=node(isVideo?'video':'img');
       if(isVideo){el.muted=true;el.loop=true;el.playsInline=true;el.preload='metadata';if(asset.poster)el.poster=new URL(asset.poster,url).href;}
-      else{el.alt='';el.decoding='async';await new Promise((resolve,reject)=>{el.onload=resolve;el.onerror=reject;});}
-      if(asset.id==='hero-hands'){el.className='supplied-hero';host.classList.add('has-assets');}
+      else{el.alt='';el.decoding='async';await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Sticker image timed out')),12000);el.onload=()=>{clearTimeout(timer);resolve();};el.onerror=()=>{clearTimeout(timer);reject(new Error('Sticker image unavailable'));};el.src=source.href;});}
+      if(isVideo)el.src=source.href;
       host.replaceChildren(el);
-    }
+    });
+    await Promise.allSettled([animated,...stickers]);
     // The user selected the original line diagram; D's particle study remains an unused asset.
     syncMotion();
   }catch(error){console.warn('Visual assets retain fallback:',error);}
@@ -472,5 +494,6 @@ const chapterObserver=new IntersectionObserver(items=>{
 $$('.chapter').forEach(section=>chapterObserver.observe(section));
 window.addEventListener('pagehide',()=>{clearReaderMedia();for(const controller of Object.values(controllers))controller.pause();});
 window.addEventListener('pageshow',syncMotion);
-await Promise.allSettled([attachModule('tree',integrations.tree),attachModule('location',integrations.location),attachVisuals(integrations.visuals)]);
 readRoute();scheduleLines('tree');scheduleLines('location');
+// Reading and navigation never wait for WebGL or decorative assets.
+Promise.allSettled([attachModule('tree',integrations.tree),attachModule('location',integrations.location),attachVisuals(integrations.visuals)]);

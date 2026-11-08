@@ -1,9 +1,9 @@
-import * as THREE from './vendor/three.module.js?v=archive-20261105-1';
-import { GLTFLoader } from './vendor/GLTFLoader.js?v=archive-20261105-1';
-import { createGlassStudio } from './studio.js?v=archive-20261105-1';
-import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261105-1';
-import { RectAreaLightUniformsLib } from './vendor/RectAreaLightUniformsLib.js?v=archive-20261105-1';
-import { HDRLoader } from './vendor/HDRLoader.js?v=archive-20261105-1';
+import * as THREE from './vendor/three.module.js?v=archive-20261108-loading-1';
+import { GLTFLoader } from './vendor/GLTFLoader.js?v=archive-20261108-loading-1';
+import { createGlassStudio } from './studio.js?v=archive-20261108-loading-1';
+import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261108-loading-1';
+import { RectAreaLightUniformsLib } from './vendor/RectAreaLightUniformsLib.js?v=archive-20261108-loading-1';
+import { HDRLoader } from './vendor/HDRLoader.js?v=archive-20261108-loading-1';
 
 let areaLightUsers=0;
 function retainAreaLights(){if(areaLightUsers++===0)RectAreaLightUniformsLib.init();}
@@ -15,6 +15,49 @@ const anchorIds = [...ids,...noteIds];
 const labels = ['01 校园', '02 实习', '03 项目', '未来'];
 const here = name => new URL(name, import.meta.url).href;
 
+// Fetch both heavy resources concurrently, while keeping cancellation and deadlines
+// attached to the actual requests rather than only to a Promise.race timer.
+async function fetchBuffer(url, {signal,timeoutMs,asset,onProgress}) {
+  const request=new AbortController();
+  const cancel=()=>request.abort(signal.reason||new DOMException('Tree loading cancelled','AbortError'));
+  if(signal.aborted)cancel();else signal.addEventListener('abort',cancel,{once:true});
+  const timeout=setTimeout(()=>request.abort(new DOMException(`${asset} load timed out`,'TimeoutError')),timeoutMs);
+  let reader;
+  try{
+    const response=await fetch(url,{signal:request.signal});
+    if(!response.ok)throw new Error(`${asset} HTTP ${response.status}`);
+    // Fetch exposes decoded bytes, while Content-Length can describe gzip/br bytes.
+    const encoding=response.headers.get('content-encoding')?.trim().toLowerCase();
+    const total=encoding&&encoding!=='identity'?0:Number(response.headers.get('content-length'))||0;
+    if(!response.body){const buffer=await response.arrayBuffer();onProgress?.({asset,loaded:buffer.byteLength,total:total||buffer.byteLength,ratio:1});return buffer;}
+    reader=response.body.getReader();const chunks=[];let loaded=0;
+    while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);loaded+=value.byteLength;onProgress?.({asset,loaded,total,ratio:total?Math.min(1,loaded/total):null});}
+    const bytes=new Uint8Array(loaded);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+    onProgress?.({asset,loaded,total:total||loaded,ratio:1});return bytes.buffer;
+  }catch(error){throw request.signal.aborted?request.signal.reason:error;}
+  finally{clearTimeout(timeout);signal.removeEventListener('abort',cancel);reader?.releaseLock();}
+}
+function disposeObject(object){
+  const geometries=new Set(),materials=new Set(),textures=new Set();
+  object?.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.morphTexture)textures.add(o.morphTexture);if(o.isInstancedMesh)o.dispose();for(const m of [].concat(o.material||[])){materials.add(m);for(const v of Object.values(m))if(v?.isTexture)textures.add(v);}});
+  geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());
+}
+function parseModel(buffer,url,signal){
+  // GLB parsing cannot be interrupted mid-task; release a late result after abort.
+  return new Promise((resolve,reject)=>{
+    let cancelled=signal.aborted;
+    const cancel=()=>{cancelled=true;reject(signal.reason||new DOMException('Tree loading cancelled','AbortError'));};
+    if(cancelled){cancel();return;}signal.addEventListener('abort',cancel,{once:true});
+    new GLTFLoader().parseAsync(buffer,new URL('.',url).href).then(gltf=>{signal.removeEventListener('abort',cancel);if(cancelled){disposeObject(gltf.scene);return;}resolve(gltf);},error=>{signal.removeEventListener('abort',cancel);reject(error);});
+  });
+}
+function parseEnvironment(buffer){
+  const data=new HDRLoader().parse(buffer);
+  const texture=new THREE.DataTexture(data.data,data.width,data.height,THREE.RGBAFormat,data.type);
+  texture.colorSpace=THREE.LinearSRGBColorSpace;texture.minFilter=texture.magFilter=THREE.LinearFilter;
+  texture.generateMipmaps=false;texture.flipY=true;texture.needsUpdate=true;return texture;
+}
+
 /** All anchor coordinates are relative to container. No global CSS or imports needed. */
 export async function createTree(container, options = {}) {
   const palette = {bg:'#ffffff', ink:'#234236', accent:'#a6dfb6', line:'#91aa9c', ...options.palette};
@@ -23,12 +66,15 @@ export async function createTree(container, options = {}) {
   const root = document.createElement('div'); root.className='tree-v4';
   Object.assign(root.style,{position:'relative',width:'100%',height:'100%',minHeight:'280px',overflow:'hidden',background:palette.bg});
   container.append(root);
-  const abort = new AbortController(), signal=abort.signal;
+  const abort = new AbortController(), signal=abort.signal, networkAbort=new AbortController();
   let disposed=false, failed=false, paused=false, selected=null, hovered=false, focused=false, dragging=null, manualYaw=0, raf=0, elapsed=reduced?3.2:0, renderedFrames=0;
-  let renderer, scene, camera, model, mixer, growth, orbit, envTarget,backdrop,areaLightsRetained=false;
+  let renderer, scene, camera, model, mixer, growth, orbit, envTarget,backdrop,pmrem,areaLightsRetained=false,gpuReleased=false;
   const externalLights=[];
   const picks=[], materials=new Set(), meshes=[], anchors={}, buttons=[];
   const stats={ready:false,renderer:'pending',leafCount:0,groups:{},animations:[],fps:0,drawCalls:0,triangles:0,selected:null,paused:false,yaw:0,errors:[]};
+  function notify(callback,value){try{callback?.(value);}catch(error){stats.errors.push('Host callback: '+String(error));}}
+  function state(name,extra={}){stats.state=name;notify(options.onState,{state:name,...extra});}
+  function progress(value){stats.progress={...stats.progress,[value.asset]:value};notify(options.onProgress,value);}
   // Keep the glass silhouette clear of the surrounding cards; model data stays intact.
   const presentationScale=options.presentationScale??.75;
   stats.presentationScale=presentationScale;
@@ -59,9 +105,11 @@ export async function createTree(container, options = {}) {
     stats.anchors=projected;options.onAnchors?.(projected);
   }
   function syncMorphs(){for(const o of meshes)if(o.isInstancedMesh&&o.morphTargetInfluences){for(let i=0;i<o.count;i++)o.setMorphAt(i,o);o.morphTexture.needsUpdate=true;}}
-  function draw(){if(disposed||failed||!renderer||!model)return;updateAnchors();renderer.render(scene,camera);renderedFrames++;stats.drawCalls=renderer.info.render.calls;stats.triangles=renderer.info.render.triangles;stats.yaw=model.rotation.y;stats.paused=paused||hovered||focused;}
-  function resize(){if(!renderer||disposed)return;const w=Math.max(1,root.clientWidth),h=Math.max(1,root.clientHeight);renderer.setSize(w,h,false);backdrop?.resize(w,h);const aspect=w/h,v=Math.max(view.height,view.width/aspect);camera.aspect=aspect;camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(v/(2*Math.hypot(.08,.20,3))));camera.updateProjectionMatrix();draw();}
-  function dispose(){if(disposed)return;disposed=true;cancelAnimationFrame(raf);abort.abort();observer.disconnect();mixer?.stopAllAction();if(model)mixer?.uncacheRoot(model);const geometries=new Set(),textures=new Set();scene?.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.morphTexture)textures.add(o.morphTexture);if(o.isInstancedMesh)o.dispose();for(const m of [].concat(o.material||[])){materials.add(m);for(const v of Object.values(m))if(v?.isTexture)textures.add(v);}});geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());envTarget?.dispose();backdrop?.dispose();if(areaLightsRetained)releaseAreaLights();renderer?.dispose();renderer?.forceContextLoss();root.remove();}
+  function draw(){if(disposed||failed||!renderer||!model)return false;try{if(renderer.getContext().isContextLost())throw new Error('WebGL context lost');updateAnchors();renderer.render(scene,camera);if(renderer.getContext().isContextLost())throw new Error('WebGL context lost');renderedFrames++;stats.drawCalls=renderer.info.render.calls;stats.triangles=renderer.info.render.triangles;stats.yaw=model.rotation.y;stats.paused=paused||hovered||focused;return true;}catch(error){stats.errors.push(String(error));fallback('图形已暂停，可继续选择内容',renderer.getContext().isContextLost()?'context-lost':'render-error');return false;}}
+  function resize(){if(!renderer||disposed||failed||!camera)return false;const w=Math.max(1,root.clientWidth),h=Math.max(1,root.clientHeight);renderer.setSize(w,h,false);backdrop?.resize(w,h);const aspect=w/h,v=Math.max(view.height,view.width/aspect);camera.aspect=aspect;camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(v/(2*Math.hypot(.08,.20,3))));camera.updateProjectionMatrix();return draw();}
+  function releaseGPU(){if(gpuReleased)return;gpuReleased=true;cancelAnimationFrame(raf);mixer?.stopAllAction();if(model)mixer?.uncacheRoot(model);disposeObject(scene);materials.forEach(m=>m.dispose());envTarget?.dispose();pmrem?.dispose();backdrop?.dispose();if(areaLightsRetained){releaseAreaLights();areaLightsRetained=false;}renderer?.dispose();renderer?.forceContextLoss();}
+  function dispose(){if(disposed)return;disposed=true;stats.ready=false;networkAbort.abort(new DOMException('Tree loading cancelled','AbortError'));abort.abort();observer.disconnect();options.signal?.removeEventListener('abort',cancelFromHost);releaseGPU();root.remove();}
+  function cancelFromHost(){if(disposed)return;dispose();state('cancelled',{reason:'aborted'});}
   const observer=new ResizeObserver(resize);observer.observe(container);
   const api={select:id=>emitSelect(id,false),pause(){paused=true;draw();},resume(){paused=false;draw();},resize,dispose,
     getStats:()=>structuredClone({...stats,elapsed,paused,hovered,focused,mixerTime:mixer?.time,morph:meshes.find(o=>o.isInstancedMesh)?.morphTargetInfluences}),
@@ -69,7 +117,7 @@ export async function createTree(container, options = {}) {
     setLighting(enabled){for(const light of externalLights)light.intensity=enabled?light.userData.power:0;stats.externalLighting=!!enabled;draw();},
     setAngle(deg){manualYaw=THREE.MathUtils.degToRad(deg);if(model)model.rotation.y=manualYaw;draw();},
     replay(){elapsed=0;paused=false;manualYaw=0;emitSelect(null,false);growth?.reset().play();},
-    seek(time){elapsed=time;if(growth){growth.reset().play();mixer.setTime(Math.min(time,stats.animations[0]?.duration||2.2));syncMorphs();}model.rotation.y=manualYaw;draw();}
+    seek(time){elapsed=time;if(growth){growth.reset().play();mixer.setTime(Math.min(time,stats.animations[0]?.duration||2.2));syncMorphs();}if(model)model.rotation.y=manualYaw;draw();}
   };
   for(const [i,id] of ids.entries()){
     const b=document.createElement('button');b.type='button';b.textContent=labels[i];b.setAttribute('aria-pressed','false');
@@ -78,8 +126,18 @@ export async function createTree(container, options = {}) {
   }
   const nav=document.createElement('nav');nav.setAttribute('aria-label','树的内容入口');
   Object.assign(nav.style,{position:'absolute',bottom:'12px',left:'50%',transform:'translateX(-50%)',display:options.showControls===false?'none':'flex',gap:'5px',whiteSpace:'nowrap',zIndex:'2'});nav.append(...buttons);root.append(nav);
+  if(options.signal?.aborted){cancelFromHost();return api;}
+  options.signal?.addEventListener('abort',cancelFromHost,{once:true});
+  state('loading');
+  if(disposed)return api;
   try{
+    const modelUrl=new URL(options.assetUrl||here('growth-tree-cut.glb'),document.baseURI).href;
+    // Settle immediately so either parallel failure can never become an unhandled rejection.
+    const settled=promise=>promise.then(value=>({value}),error=>({error}));
+    const modelRequest=settled(fetchBuffer(modelUrl,{signal:networkAbort.signal,timeoutMs:options.loadTimeoutMs??45000,asset:'model',onProgress:progress}).catch(error=>{networkAbort.abort(error);throw error;}));
+    const environmentRequest=settled(fetchBuffer(here('studio-light.hdr'),{signal:networkAbort.signal,timeoutMs:options.hdrTimeoutMs??8000,asset:'environment',onProgress:progress}));
     renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+    renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();if(disposed||failed)return;stats.errors.push('WebGL context lost');fallback('图形已暂停，可继续选择内容','context-lost');},{signal});
     renderer.setPixelRatio(Math.min(devicePixelRatio, options.pixelRatio||1.5));renderer.setClearColor(palette.bg);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
     renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
     renderer.domElement.setAttribute('aria-label','可拖动旋转的成长之树');renderer.domElement.tabIndex=0;
@@ -87,10 +145,12 @@ export async function createTree(container, options = {}) {
     scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(34,1,.01,10);const center=options.viewCenter||[0,.40,0];camera.position.set(center[0]+.08,center[1]-.08,center[2]+3);camera.lookAt(...center);
     const edgeBlend=options.edgeBlend??options.showControls===false;
     if(options.background!=='solid')scene.add(createExhibitionRoom({blendColor:edgeBlend?palette.bg:null}));stats.background=options.background==='solid'?'solid':'white-gallery';stats.edgeBlend=!!edgeBlend;stats.groundShadow=false;stats.lighting='neutral studio softboxes';stats.glass='clear solid glass';
-    const pmrem=new THREE.PMREMGenerator(renderer);
-    try{const hdr=await new HDRLoader().loadAsync(here('studio-light.hdr'));envTarget=pmrem.fromEquirectangular(hdr);hdr.dispose();stats.environment='photographic studio HDR';}
-    catch{const room=createGlassStudio();envTarget=pmrem.fromScene(room,.005);room.dispose();stats.environment='procedural studio fallback';}
-    scene.environment=envTarget.texture;scene.environmentRotation.y=Math.PI*.35;pmrem.dispose();
+    const [modelResult,environmentResult]=await Promise.all([modelRequest,environmentRequest]);
+    if(disposed||failed)return api;if(modelResult.error)throw modelResult.error;
+    pmrem=new THREE.PMREMGenerator(renderer);
+    try{if(environmentResult.error)throw environmentResult.error;const hdr=parseEnvironment(environmentResult.value);try{envTarget=pmrem.fromEquirectangular(hdr);}finally{hdr.dispose();}stats.environment='photographic studio HDR';}
+    catch{const room=createGlassStudio();try{envTarget=pmrem.fromScene(room,.005);}finally{room.dispose();}stats.environment='procedural studio fallback';}
+    scene.environment=envTarget.texture;scene.environmentRotation.y=Math.PI*.35;pmrem.dispose();pmrem=null;
     scene.environmentIntensity=.65;scene.add(new THREE.HemisphereLight(0xffffff,0xa0aaa7,.35));
     const light=new THREE.DirectionalLight(0xffffff,1.8);light.position.set(-.8,3,1);light.castShadow=true;light.shadow.mapSize.set(1024,1024);Object.assign(light.shadow.camera,{left:-1,right:1,top:1.5,bottom:-1,near:.1,far:7});light.shadow.bias=-.0003;light.shadow.radius=3;scene.add(light);
     const fill=new THREE.DirectionalLight(0xe4eeeb,.7);fill.position.set(1,1,-1);scene.add(fill);
@@ -101,8 +161,8 @@ export async function createTree(container, options = {}) {
     stats.externalLighting=true;
     const wallFill=new THREE.RectAreaLight(0xffffff,2.0,2.4,1.5);wallFill.position.set(0,.65,-.7);wallFill.lookAt(0,.65,-1.15);scene.add(wallFill);
     // User removed the ground projection; self-shadowing remains on the tree.
-    const gltf=await new GLTFLoader().loadAsync(options.assetUrl||here('growth-tree-cut.glb'));
-    if(disposed){gltf.scene.traverse(o=>{o.geometry?.dispose();for(const m of [].concat(o.material||[]))m.dispose();});return api;}
+    const gltf=await parseModel(modelResult.value,modelUrl,networkAbort.signal);
+    if(disposed||failed){disposeObject(gltf.scene);return api;}
     model=gltf.scene;scene.add(model);stats.animations=gltf.animations.map(a=>({name:a.name,duration:a.duration,tracks:a.tracks.length}));
     model.traverse(o=>{
       if(o.name.startsWith('anchor')){const id=anchorIds.find(id=>o.name.endsWith(id));if(id)anchors[id]=o;}
@@ -111,7 +171,7 @@ export async function createTree(container, options = {}) {
       let metadata=o;while(metadata&&!metadata.userData.glass)metadata=metadata.parent;
       if(metadata){o.userData.glass=true;o.userData.section=metadata.userData.section;}
       o.userData.section=o.userData.section||(group?.userData.group==='stem'?(o.isInstancedMesh?'outlook':undefined):group?.userData.group);
-      o.material=o.material.clone();materials.add(o.material);meshes.push(o);
+      materials.add(o.material);o.material=o.material.clone();materials.add(o.material);meshes.push(o);
       if(o.userData.glass){
         // A single photographic response keeps transmitted leaves from clipping.
         o.material.toneMapped=true;
@@ -131,7 +191,8 @@ export async function createTree(container, options = {}) {
     if(growth){growth=mixer.clipAction(growth);growth.setLoop(THREE.LoopOnce,1);growth.clampWhenFinished=true;growth.play();}
     orbit=gltf.animations.find(a=>a.name==='02 Orbit A');
     if(reduced){mixer.setTime(2.2);syncMorphs();}
-    stats.ready=true;stats.renderer=renderer.getContext().getParameter(renderer.getContext().RENDERER);status.remove();resize();
+    stats.renderer=renderer.getContext().getParameter(renderer.getContext().RENDERER);if(!resize())return api;
+    stats.ready=true;status.remove();state('ready');if(disposed||failed)return api;
     const raycaster=new THREE.Raycaster();
     const pick=e=>{const rect=renderer.domElement.getBoundingClientRect();const x=e.clientX-rect.left,y=e.clientY-rect.top;
       const near=anchorIds.map(id=>({id,a:stats.anchors?.[id]})).filter(p=>p.a?.visible).map(p=>({...p,d:Math.hypot(x-p.a.u*rect.width,y-p.a.v*rect.height)})).sort((a,b)=>a.d-b.d)[0];
@@ -144,7 +205,6 @@ export async function createTree(container, options = {}) {
     root.addEventListener('pointerenter',()=>{hovered=true;},{signal});root.addEventListener('pointerleave',()=>{hovered=false;},{signal});
     root.addEventListener('focusin',()=>{focused=true;},{signal});root.addEventListener('focusout',e=>{focused=root.contains(e.relatedTarget);},{signal});
     renderer.domElement.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();api.setAngle(THREE.MathUtils.radToDeg(model.rotation.y)+(e.key==='ArrowLeft'?-5:5));}if(e.key==='Escape')emitSelect(null);if(e.key===' '){e.preventDefault();paused=!paused;}},{signal});
-    renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();stats.errors.push('WebGL context lost');fallback('图形已暂停，可继续选择内容');},{signal});
     let last=performance.now(),frames=0,windowStart=last;
     function tick(now){if(disposed||failed)return;raf=requestAnimationFrame(tick);const dt=Math.max(0,(now-last)/1000);last=now;
       if(!document.hidden&&!paused&&!dragging&&(elapsed<2.2||(!reduced&&!hovered&&!focused))){
@@ -155,7 +215,7 @@ export async function createTree(container, options = {}) {
       }
       frames++;if(now-windowStart>1000){stats.fps=Math.round(renderedFrames*1000/(now-windowStart));stats.refreshFps=Math.round(frames*1000/(now-windowStart));renderedFrames=0;frames=0;windowStart=now;}
     }raf=requestAnimationFrame(tick);draw();
-  }catch(error){stats.errors.push(String(error));fallback('三维图形未能载入，可继续选择内容');}
-  function fallback(message){failed=true;stats.ready=false;cancelAnimationFrame(raf);renderer?.domElement.remove();status.textContent=message;root.append(status);const img=document.createElement('img');img.src=here('fallback.png');img.alt='成长之树静态图';Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain'});root.prepend(img);nav.style.display='flex';options.onAnchors?.(Object.fromEntries(anchorIds.map(id=>[id,{u:.5,v:.5,visible:false}])));}
+  }catch(error){if(disposed||failed)return api;stats.errors.push(String(error));fallback('三维图形未能载入，可继续选择内容',error?.name==='TimeoutError'?'timeout':'load-error');}
+  function fallback(message,reason='load-error'){if(disposed||failed)return;failed=true;stats.ready=false;networkAbort.abort(new DOMException('Tree loading stopped','AbortError'));observer.disconnect();renderer?.domElement.remove();releaseGPU();status.textContent=message;root.append(status);const img=document.createElement('img');img.src=here('fallback.png');img.alt='成长之树静态图';Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain'});root.prepend(img);nav.style.display='flex';notify(options.onAnchors,Object.fromEntries(anchorIds.map(id=>[id,{u:.5,v:.5,visible:false}])));state('error',{reason,message});}
   return api;
 }

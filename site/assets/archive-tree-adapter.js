@@ -1,4 +1,4 @@
-import { createTree as createBTree } from '../modules/tree-v4/index.js?v=archive-20261105-1';
+import { createTree as createBTree } from '../modules/tree-v4/index.js?v=archive-20261108-loading-1';
 
 // B owns the selected cut model, materials and six authored projection anchors.
 export async function createTree(container, options = {}) {
