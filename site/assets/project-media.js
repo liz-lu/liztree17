@@ -207,10 +207,11 @@ function createBoardViewer(listen, onChange) {
 }
 
 function mountVideos(section, listen) {
-  let current=-1, bufferingTimer=null, disposed=false;
+  let current=-1, bufferingTimer=null, fallbackTimer=null, disposed=false;
+  let quality='smooth', pendingPlayback=null;
   const frame=element('div','project-media-video-frame');
   const video = element('video','project-media-video');
-  video.controls=true; video.playsInline=true; video.preload='metadata';
+  video.controls=true; video.playsInline=true; video.preload='auto';
   video.setAttribute('playsinline','');
   const buffering=element('p','project-media-video-status');
   buffering.hidden=true;buffering.setAttribute('role','status');
@@ -218,6 +219,16 @@ function mountVideos(section, listen) {
   frame.append(video,buffering);
   const caption=element('p','project-media-caption');
   caption.setAttribute('aria-live','polite');
+  const qualityBar=element('div','project-media-quality');
+  const qualityOptions=element('div','project-media-quality-options');
+  qualityOptions.setAttribute('role','group');qualityOptions.setAttribute('aria-label','视频清晰度');
+  const qualityButtons=['smooth','hd'].map(value=>{
+    const option=button(value==='smooth'?'流畅 360p':'高清 720p');
+    option.dataset.quality=value;
+    listen(option,'click',()=>changeQuality(value));qualityOptions.append(option);return option;
+  });
+  const bufferInfo=element('span','project-media-buffer-info','正在准备视频…');
+  qualityBar.append(qualityOptions,bufferInfo);
   const choices=element('div','project-media-video-choices');
   choices.setAttribute('role','group');choices.setAttribute('aria-label','选择 AI 视频作品');
   const selectors=videoWorks.map((work,index) => {
@@ -225,15 +236,43 @@ function mountVideos(section, listen) {
     choice.classList.add('project-media-video-choice');
     const copy=element('span','project-media-work-copy');
     copy.append(element('span','project-media-work-title',work.title),element('span','project-media-work-duration',`${String(index+1).padStart(2,'0')} / ${work.duration}`));
-    choice.append(image(source(`zeemo/${work.slug}.webp`),'','project-media-video-poster'),copy);
+    choice.append(image(source(`zeemo/${work.slug}-smooth.webp`),'','project-media-video-poster'),copy);
     listen(choice,'click',() => select(index));
     choices.append(choice);return choice;
   });
   const error=element('p','project-media-error');error.hidden=true;error.setAttribute('role','status');
-  section.append(frame,caption,choices,error);
+  section.append(frame,qualityBar,caption,choices,error);
   function clearBuffering() {
     clearTimeout(bufferingTimer);bufferingTimer=null;
+    clearTimeout(fallbackTimer);fallbackTimer=null;
     buffering.hidden=true;buffering.textContent='';
+  }
+  function updateBufferInfo(){
+    if(disposed)return;
+    let ahead=0;
+    for(let i=0;i<video.buffered.length;i++){
+      if(video.buffered.start(i)<=video.currentTime+.1&&video.buffered.end(i)>video.currentTime)
+        ahead=Math.max(ahead,video.buffered.end(i)-video.currentTime);
+    }
+    bufferInfo.textContent=ahead>=1?`已缓冲 ${Math.floor(ahead)} 秒`:'正在准备视频…';
+  }
+  function loadSource(time=0,play=false){
+    clearBuffering();video.pause();error.hidden=true;
+    const work=videoWorks[current];
+    video.poster=source(`zeemo/${work.slug}-smooth.webp`);
+    // This component is mounted only when its experience is opened. Warm just
+    // the selected small file from the initial request, not every site video.
+    video.preload='auto';
+    video.src=source(`zeemo/${work.slug}${quality==='smooth'?'-smooth':''}.mp4?v=stream-20261109-1`);
+    video.setAttribute('aria-label',work.title);
+    pendingPlayback={time,play};
+    video.load();updateBufferInfo();
+    qualityButtons.forEach(option=>option.setAttribute('aria-pressed',String(option.dataset.quality===quality)));
+  }
+  function changeQuality(value){
+    if(disposed||value===quality&&!video.error)return;
+    const time=video.currentTime,play=!video.paused&&!video.ended;
+    quality=value;loadSource(time,play);
   }
   function showBuffering() {
     // Metadata fetches and pauses are not playback stalls. Ignore brief waits.
@@ -242,30 +281,41 @@ function mountVideos(section, listen) {
       bufferingTimer=null;
       if(disposed||video.paused||video.ended||video.error||video.readyState>=3) return;
       buffering.textContent='正在缓冲…';buffering.hidden=false;
+      // Only a sustained HD playback stall triggers a lower-bandwidth source.
+      if(quality==='hd')fallbackTimer=setTimeout(()=>{
+        fallbackTimer=null;
+        if(disposed||video.paused||video.ended||video.error||video.readyState>=3||quality!=='hd')return;
+        changeQuality('smooth');
+        buffering.textContent='已切换流畅画质，正在缓冲…';buffering.hidden=false;
+      },3000);
     },250);
   }
   function select(index) {
     // Preserve the current time and downloaded buffer; a real error can retry.
     if(index===current&&!video.error) return;
-    current=index;clearBuffering();
-    video.pause();
+    current=index;
     const work=videoWorks[index];
-    video.poster=source(`zeemo/${work.slug}.webp`);
-    video.src=source(`zeemo/${work.slug}.mp4?v=web-20261028-1`);
-    video.setAttribute('aria-label',work.title);
-    video.load();error.hidden=true;
+    loadSource();
     caption.textContent=`${String(index+1).padStart(2,'0')} / 03　${work.title}`;
     selectors.forEach((node,i) => node.setAttribute('aria-pressed',String(i===index)));
   }
   listen(video,'waiting',showBuffering);
   listen(video,'stalled',showBuffering);
   listen(video,'seeking',showBuffering);
+  listen(video,'loadedmetadata',()=>{
+    const pending=pendingPlayback;pendingPlayback=null;
+    if(!pending||disposed)return;
+    if(pending.time>0)video.currentTime=Math.min(pending.time,Math.max(0,video.duration-.1));
+    if(pending.play&&!document.hidden)video.play().catch(()=>{});
+  });
+  ['progress','loadeddata','timeupdate','seeked'].forEach(event=>listen(video,event,updateBufferInfo));
   listen(video,'canplay',() => {if(video.readyState>=3)clearBuffering();});
   listen(video,'seeked',() => {if(video.readyState>=3)clearBuffering();});
   ['playing','pause','ended','emptied','abort'].forEach(event => listen(video,event,clearBuffering));
   listen(video,'error',() => {clearBuffering();error.textContent='视频暂时无法播放，请点击当前作品重试，或切换其他作品。';error.hidden=false;});
-  listen(document,'visibilitychange',() => {if(document.hidden)video.pause();});
-  listen(window,'pagehide',() => video.pause());
+  function pause(){if(pendingPlayback)pendingPlayback.play=false;video.pause();}
+  listen(document,'visibilitychange',() => {if(document.hidden)pause();});
+  listen(window,'pagehide',pause);
   select(0);
-  return () => {disposed=true;clearBuffering();video.pause();video.removeAttribute('src');video.removeAttribute('poster');video.load();};
+  return () => {disposed=true;pendingPlayback=null;clearBuffering();video.pause();video.removeAttribute('src');video.removeAttribute('poster');video.load();};
 }

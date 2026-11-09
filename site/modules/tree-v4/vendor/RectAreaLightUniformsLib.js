@@ -1,5 +1,5 @@
-import { UniformsLib } from './three.module.js?v=archive-20261108-loading-1';
-import { RectAreaLightTexturesLib } from './RectAreaLightTexturesLib.js?v=archive-20261108-loading-1';
+import { UniformsLib } from './three.module.js?v=archive-20261109-playback-1';
+import { RectAreaLightTexturesLib } from './RectAreaLightTexturesLib.js?v=archive-20261109-playback-1';
 
 /**
  * This class is only relevant when using {@link RectAreaLight} with {@link WebGLRenderer}.
@@ -12,7 +12,7 @@ import { RectAreaLightTexturesLib } from './RectAreaLightTexturesLib.js?v=archiv
  * ```
  *
  * @hideconstructor
- * @three_import import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js?v=archive-20261108-loading-1';
+ * @three_import import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js?v=archive-20261109-playback-1';
  */
 class RectAreaLightUniformsLib {
 

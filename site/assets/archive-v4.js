@@ -1,10 +1,10 @@
-import { mountWebPreview } from './archive-web-preview.js?v=archive-20261108-loading-1';
-import { groups } from './data.js?v=archive-20261108-loading-1';
-import { details } from './details.js?v=archive-20261108-loading-1';
-import { mountProjectMedia } from './project-media.js?v=archive-20261108-loading-1';
-import { integrations } from './archive-integrations.js?v=archive-20261108-loading-1';
-import { mountMicrographics } from './archive-micrographics.js?v=archive-20261108-loading-1';
-import { mountProgressiveTree } from './archive-loading.js?v=archive-20261108-loading-1';
+import { mountWebPreview } from './archive-web-preview.js?v=archive-20261109-playback-1';
+import { groups } from './data.js?v=archive-20261109-playback-1';
+import { details } from './details.js?v=archive-20261109-playback-1';
+import { mountProjectMedia } from './project-media.js?v=archive-20261109-playback-1';
+import { integrations } from './archive-integrations.js?v=archive-20261109-playback-1';
+import { mountMicrographics } from './archive-micrographics.js?v=archive-20261109-playback-1';
+import { mountProgressiveTree } from './archive-loading.js?v=archive-20261109-playback-1';
 mountMicrographics();
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -19,6 +19,8 @@ const visualControllers=[];
 const activeScenes = new Set();
 const sceneAnchors = {tree:null, location:null};
 let selectedBranch = '', selectedCity = 'gansu', motionStopped = false;
+let selectionPaused=false, motionOptIn=false;
+let pageScrolling=false, scrollIdleTimer=0;
 let selectedNote = '';
 let disposedMedia = [], readerState = null, bodyScroll = null, searchTrigger = null;
 let previousRestoration = history.scrollRestoration, restoreScrollTimer = 0;
@@ -80,7 +82,7 @@ function selectCity(id, fromModule=false) {
 }
 $$('[data-city]').forEach(button=>button.addEventListener('click',()=>selectCity(button.dataset.city)));
 
-function selectBranch(id, fromModule=false) {
+function selectBranch(id, fromModule=false, pauseForSelection=true) {
   if (!['campus','internships','projects','outlook'].includes(id)) return;
   const changed=selectedBranch!==id; selectedBranch=id;
   selectedNote='';updateNoteSelection();
@@ -88,6 +90,7 @@ function selectBranch(id, fromModule=false) {
   $$('[data-select-branch]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.selectBranch===id)));
   $('#branch-status').textContent=id==='outlook'?'嫩梢 / 让好奇心继续生长。':`${groups[id].index} / ${id==='internships'?'实习经历':id==='projects'?'个人 AI 项目':'校园与学习'} · 选择卡片中的一项阅读。`;
   if (!fromModule && changed) controllers.tree?.select(id);
+  if(pauseForSelection){selectionPaused=true;syncMotion();}
   scheduleLines('tree');
 }
 $$('[data-select-branch]').forEach(button=>button.addEventListener('click',()=>selectBranch(button.dataset.selectBranch)));
@@ -109,7 +112,7 @@ function selectNote(id, bringIntoView=false){
   $$('[data-select-branch]').forEach(button=>button.setAttribute('aria-pressed','false'));
   updateNoteSelection();
   controllers.tree?.select(null);
-  controllers.tree?.pause();
+  selectionPaused=true;syncMotion();
   $('#branch-status').textContent=id==='trunk'?'主干 / 坚韧、好奇、创造、严谨与人文。':'根系 / 好奇心，从这里生长。';
   scheduleLines('tree');
   const local=$('.tree-local-notes');
@@ -117,12 +120,13 @@ function selectNote(id, bringIntoView=false){
 }
 $$('[data-select-note]').forEach(button=>button.addEventListener('click',()=>selectNote(button.dataset.selectNote)));
 
-$('#tree-motion').addEventListener('click',()=>{
-  motionStopped=!motionStopped;
-  $('#tree-motion').setAttribute('aria-pressed',String(motionStopped));
-  $('#tree-motion').replaceChildren(document.createTextNode(motionStopped?'继续旋转 ':'暂停旋转 '),node('span','',motionStopped?'▷':'Ⅱ'));
+function toggleTreeMotion(){
+  const wasStopped=motionStopped||selectionPaused||(reduced.matches&&!motionOptIn);
+  selectionPaused=false;motionStopped=!wasStopped;
+  if(wasStopped)motionOptIn=true;
   syncMotion();
-});
+}
+$('#tree-motion').addEventListener('click',toggleTreeMotion);
 
 function lockPage() {
   if (bodyScroll!==null) return;
@@ -205,7 +209,7 @@ function renderReader(entry) {
 function openReader(id, trigger, projectId=null, fromRoute=false) {
   const entry=entryById.get(id); if(!entry)return;
   const existing=readerState;
-  selectBranch(entry.groupId);
+  selectBranch(entry.groupId,false,false);
   if(!reader.open){
     const oldHash=location.hash.startsWith('#read/')?'#growth':location.hash;
     readerState={trigger:trigger||$(`[data-experience="${id}"]`),returnHash:oldHash,pushed:!fromRoute};
@@ -323,6 +327,13 @@ document.addEventListener('pointerdown',event=>{
 
 const svgNS='http://www.w3.org/2000/svg';
 const pendingLines={};
+let leaderGeometry=null;
+function svgPart(parent,tag,key){
+  let el=parent.querySelector(`[data-part="${key}"]`);
+  if(!el){el=document.createElementNS(svgNS,tag);el.dataset.part=key;parent.append(el);}
+  return el;
+}
+function attributes(el,values){for(const [key,value] of Object.entries(values)){const s=String(value);if(el.getAttribute(key)!==s)el.setAttribute(key,s);}}
 function scheduleLines(kind){
   if(pendingLines[kind])return;
   pendingLines[kind]=requestAnimationFrame(()=>{pendingLines[kind]=0;drawLeaders(kind);});
@@ -338,25 +349,33 @@ function fallbackAnchors(kind,host){
 }
 function drawLeaders(kind){
   const layout=$(`[data-scene="${kind}"]`),host=$(`#${kind==='tree'?'tree':'location'}-scene`),svg=$('.leader-layer',layout);
-  if(kind==='location'){svg.replaceChildren();return;}
-  if(kind==='tree')positionTreeHotspots();
+  if(kind==='location'){if(svg.childElementCount)svg.replaceChildren();return;}
   if(layoutWidth()<=900){svg.replaceChildren();return;}
-  const layoutBox=layout.getBoundingClientRect(),hostBox=host.getBoundingClientRect();
-  svg.setAttribute('viewBox',`0 0 ${layoutBox.width} ${layoutBox.height}`);
-  const anchors=sceneAnchors[kind]||fallbackAnchors(kind,host);const fragment=document.createDocumentFragment();
-  $$('[data-leader]',layout).forEach(card=>{
-    const id=card.dataset.leader,anchor=anchors[id];if(!anchor||anchor.visible===false||!Number.isFinite(anchor.u)||!Number.isFinite(anchor.v))return;
-    const r=card.getBoundingClientRect();const x=hostBox.left-layoutBox.left+anchor.u*hostBox.width,y=hostBox.top-layoutBox.top+anchor.v*hostBox.height;
-    const endX=card.dataset.side==='left'?r.right-layoutBox.left+1:r.left-layoutBox.left-1,endY=r.top-layoutBox.top+16;
+  // Read geometry together, only after layout changes; ordinary scroll changes
+  // all viewport rects equally and does not change these relative coordinates.
+  if(!leaderGeometry){
+    const l=layout.getBoundingClientRect(),h=host.getBoundingClientRect();
+    leaderGeometry={width:l.width,height:l.height,x:h.left-l.left,y:h.top-l.top,w:h.width,h:h.height,localW:host.clientWidth,localH:host.clientHeight,
+      cards:$$('[data-leader]',layout).map(card=>{const r=card.getBoundingClientRect();return{id:card.dataset.leader,endX:card.dataset.side==='left'?r.right-l.left+1:r.left-l.left-1,endY:r.top-l.top+16};})};
+  }
+  const box=leaderGeometry;
+  attributes(svg,{viewBox:`0 0 ${box.width} ${box.height}`});
+  const anchors=sceneAnchors[kind]||fallbackAnchors(kind,host);
+  positionTreeHotspots(box.localW,box.localH);
+  box.cards.forEach(({id,endX,endY})=>{
+    const anchor=anchors[id],g=svgPart(svg,'g',id);g.dataset.anchor=id;
+    const visible=anchor&&anchor.visible!==false&&Number.isFinite(anchor.u)&&Number.isFinite(anchor.v);
+    g.style.display=visible?'':'none';if(!visible)return;
+    const x=box.x+anchor.u*box.w,y=box.y+anchor.v*box.h;
     const dx=endX-x,dy=endY-y,sx=Math.sign(dx),sy=Math.sign(dy),room=Math.max(0,Math.abs(dx)-26),diag=Math.min(room,Math.abs(dy));
     let d;
     if(Math.abs(dy)<=room){const corner=endX-sx*20;d=`M${x},${y} H${corner-sx*diag} L${corner},${endY} H${endX}`;}
     else{d=`M${x},${y} V${endY-sy*diag} L${x+sx*diag},${endY} H${endX}`;}
-    const g=document.createElementNS(svgNS,'g');g.dataset.anchor=id;if(id===(kind==='tree'?(selectedNote||selectedBranch):selectedCity))g.classList.add('selected');
-    const path=document.createElementNS(svgNS,'path');path.setAttribute('d',d);g.append(path);
-    const square=document.createElementNS(svgNS,'rect');square.setAttribute('x',x-3);square.setAttribute('y',y-3);square.setAttribute('width','6');square.setAttribute('height','6');g.append(square);
-    const terminal=document.createElementNS(svgNS,'rect');terminal.classList.add('leader-terminal');terminal.setAttribute('x',endX-2);terminal.setAttribute('y',endY-2);terminal.setAttribute('width','4');terminal.setAttribute('height','4');g.append(terminal);fragment.append(g);
-  });svg.replaceChildren(fragment);
+    g.classList.toggle('selected',id===(selectedNote||selectedBranch));
+    attributes(svgPart(g,'path','line'),{d});
+    attributes(svgPart(g,'rect','anchor'),{x:x-3,y:y-3,width:6,height:6});
+    const terminal=svgPart(g,'rect','terminal');terminal.classList.add('leader-terminal');attributes(terminal,{x:endX-2,y:endY-2,width:4,height:4});
+  });
 }
 function applyTreeScale(){
   const layout=$('.tree-layout'),host=$('#tree-scene'),width=layout.clientWidth;
@@ -381,41 +400,55 @@ function installTreeHotspots(){
   const root=node('div','root-local-label');root.dataset.noteAnchor='roots';root.append(node('small','','ROOT / 00'),node('span','','从兴趣出发'));root.title='科幻电影埋下兴趣的种子，后来开始自学 AI，探索连接物理世界的人工智能。';
   overlay.append(cluster,root);host.append(overlay);positionTreeHotspots();
 }
-function positionTreeHotspots(){
+function positionTreeHotspots(width,height){
   const host=$('#tree-scene'),anchors=sceneAnchors.tree||fallbackAnchors('tree',host),svg=$('.tree-note-lines',host);
   if(!svg)return;
-  svg.setAttribute('viewBox',`0 0 ${host.clientWidth} ${host.clientHeight}`);const lines=document.createDocumentFragment();
+  width??=host.clientWidth;height??=host.clientHeight;
+  attributes(svg,{viewBox:`0 0 ${width} ${height}`});
   for(const [id,selector] of [['trunk','.tree-local-notes'],['roots','.root-local-label']]){
     const el=$(selector,host),a=anchors[id];if(!el)continue;el.hidden=!a||a.visible===false;
+    const group=svgPart(svg,'g',id);group.dataset.noteLine=id;group.style.display=el.hidden?'none':'';
     if(!a||a.visible===false)continue;
-    const x=a.u*host.clientWidth,y=a.v*host.clientHeight,small=layoutWidth()<=600;
+    const x=a.u*width,y=a.v*height,small=layoutWidth()<=600;
     const direction=id==='trunk'?1:-1,run=small?49:90,dy=id==='trunk'?-36:35;
     const endX=x+direction*run,endY=y+dy;
-    el.style.left=`${id==='trunk'?endX+7:endX-(small?78:104)}px`;el.style.top=`${endY-30}px`;
-    const group=document.createElementNS(svgNS,'g');group.dataset.noteLine=id;
-    const path=document.createElementNS(svgNS,'path');path.setAttribute('d',`M${x},${y} L${x+direction*Math.abs(dy)},${endY} H${endX}`);
-    const dot=document.createElementNS(svgNS,'circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r','3');
-    const end=document.createElementNS(svgNS,'rect');end.setAttribute('x',endX-2);end.setAttribute('y',endY-2);end.setAttribute('width','4');end.setAttribute('height','4');
-    group.append(path,dot,end);lines.append(group);
-  }svg.replaceChildren(lines);
+    el.style.left='0';el.style.top='0';el.style.transform=`translate(${id==='trunk'?endX+7:endX-(small?78:104)}px,${endY-30}px)`;
+    attributes(svgPart(group,'path','line'),{d:`M${x},${y} L${x+direction*Math.abs(dy)},${endY} H${endX}`});
+    attributes(svgPart(group,'circle','anchor'),{cx:x,cy:y,r:3});
+    attributes(svgPart(group,'rect','terminal'),{x:endX-2,y:endY-2,width:4,height:4});
+  }
 }
 applyTreeScale();installTreeHotspots();
-const resizeObserver=new ResizeObserver(()=>{applyTreeScale();scheduleLines('tree');scheduleLines('location');controllers.tree?.resize();controllers.location?.resize();});
+const resizeObserver=new ResizeObserver(()=>{leaderGeometry=null;applyTreeScale();scheduleLines('tree');scheduleLines('location');controllers.tree?.resize();controllers.location?.resize();});
 $$('.specimen-layout').forEach(el=>resizeObserver.observe(el));
-document.fonts.ready.then(()=>{scheduleLines('tree');scheduleLines('location');});
+document.fonts.ready.then(()=>{leaderGeometry=null;scheduleLines('tree');scheduleLines('location');});
+window.addEventListener('resize',()=>{leaderGeometry=null;scheduleLines('tree');},{passive:true});
 
 function syncMotion(){
-  const stopped=document.hidden||reader.open||search.open;
+  const stopped=document.hidden||reader.open||search.open||pageScrolling;
   document.body.classList.toggle('motion-paused',stopped);
   for(const visual of visualControllers){visual.setReducedMotion?.(reduced.matches);if(stopped||reduced.matches)visual.pause();else visual.resume();}
   for(const [kind,controller] of Object.entries(controllers)){
-    if(stopped||reduced.matches||!activeScenes.has(kind)||(kind==='tree'&&motionStopped))controller.pause();else controller.resume();
+    const reduce= reduced.matches && !(kind==='tree'&&motionOptIn);
+    controller.setReducedMotion?.(reduce);
+    if(stopped||reduce||!activeScenes.has(kind)||(kind==='tree'&&(motionStopped||selectionPaused)))controller.pause();else controller.resume();
   }
+  const treePaused=motionStopped||selectionPaused||(reduced.matches&&!motionOptIn);
+  const button=$('#tree-motion');button.setAttribute('aria-pressed',String(treePaused));
+  button.replaceChildren(document.createTextNode(treePaused?'继续旋转 ':'暂停旋转 '),node('span','',treePaused?'▷':'Ⅱ'));
   $$('[data-visual-slot] video,.hero-visual video').forEach(video=>{if(stopped||reduced.matches)video.pause();else video.play().catch(()=>{});});
 }
 const sceneObserver=new IntersectionObserver(items=>{for(const item of items){const kind=item.target.id==='tree-scene'?'tree':'location';if(item.isIntersecting)activeScenes.add(kind);else activeScenes.delete(kind);}syncMotion();},{threshold:.05});
 sceneObserver.observe($('#tree-scene'));sceneObserver.observe($('#location-scene'));
-document.addEventListener('visibilitychange',syncMotion);reduced.addEventListener('change',syncMotion);
+document.addEventListener('visibilitychange',syncMotion);reduced.addEventListener('change',()=>{motionOptIn=false;syncMotion();});
+// Give scrolling the frame budget. Resume after a short idle without changing
+// the visitor's explicit pause or selected-reading state.
+window.addEventListener('scroll',()=>{
+  if(reader.open||search.open)return;
+  if(!pageScrolling){pageScrolling=true;syncMotion();}
+  clearTimeout(scrollIdleTimer);
+  scrollIdleTimer=setTimeout(()=>{pageScrolling=false;syncMotion();},180);
+},{passive:true});
 
 async function attachModule(kind,path){
   if(!path)return;
@@ -423,12 +456,12 @@ async function attachModule(kind,path){
   if(kind==='tree'){
     mountProgressiveTree(host,async(mount,lifecycle)=>{
       let module;
-      try{module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261108-loading-1',import.meta.url)).href);}
+      try{module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261109-playback-1',import.meta.url)).href);}
       catch(error){error.reloadPage=true;throw error;}
       if(lifecycle.signal.aborted)throw new Error('Tree load cancelled');
       return module.createTree(mount,{
         ...lifecycle,palette,reducedMotion:reduced.matches,showControls:false,
-        onSelect:id=>selectBranch(id,true),onNoteSelect:id=>selectNote(id),
+        onSelect:id=>selectBranch(id,true),onNoteSelect:id=>selectNote(id),onToggleMotion:toggleTreeMotion,
         onAnchors:anchors=>{if(host.dataset.integrated==='true'){sceneAnchors.tree=anchors;scheduleLines('tree');}}
       });
     },{
@@ -439,7 +472,7 @@ async function attachModule(kind,path){
     return;
   }
   try{
-    const module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261108-loading-1',import.meta.url)).href);
+    const module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261109-playback-1',import.meta.url)).href);
     host.replaceChildren();
     const controller=await module[kind==='tree'?'createTree':'createLocation'](host,{
       palette,reducedMotion:reduced.matches,showControls:false,
@@ -458,13 +491,13 @@ async function attachModule(kind,path){
 async function attachVisuals(path){
   if(!path)return;
   try{
-    const url=new URL(path,new URL('./archive-integrations.js?v=archive-20261108-loading-1',import.meta.url));const response=await fetch(url,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Visual manifest unavailable');
+    const url=new URL(path,new URL('./archive-integrations.js?v=archive-20261109-playback-1',import.meta.url));const response=await fetch(url,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Visual manifest unavailable');
     const manifest=await response.json();const assets=Array.isArray(manifest)?manifest:manifest.assets;
     if(!Array.isArray(assets))throw new Error('Visual manifest needs assets array');
     const readyAssets=assets.filter(a=>!a.temporary);
     // The hero is already in HTML. Decorative animation is an independent enhancement.
     const animated=(async()=>{
-      const motion=await import(new URL('motion.js?v=archive-20261108-loading-1',url));
+      const motion=await import(new URL('motion.js?v=archive-20261109-playback-1',url));
       const runner=$('[data-visual-slot="runner"]');if(runner){runner.replaceChildren();visualControllers.push(motion.createVisual(runner,{kind:'runner',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));}
       const touch=$('[data-visual-slot="touch"]');if(touch&&readyAssets.some(a=>a.id==='tech-touch')){touch.replaceChildren();visualControllers.push(motion.createVisual(touch,{kind:'touch',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));}
     })();

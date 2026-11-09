@@ -1,9 +1,9 @@
-import * as THREE from './vendor/three.module.js?v=archive-20261108-loading-1';
-import { GLTFLoader } from './vendor/GLTFLoader.js?v=archive-20261108-loading-1';
-import { createGlassStudio } from './studio.js?v=archive-20261108-loading-1';
-import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261108-loading-1';
-import { RectAreaLightUniformsLib } from './vendor/RectAreaLightUniformsLib.js?v=archive-20261108-loading-1';
-import { HDRLoader } from './vendor/HDRLoader.js?v=archive-20261108-loading-1';
+import * as THREE from './vendor/three.module.js?v=archive-20261109-playback-1';
+import { GLTFLoader } from './vendor/GLTFLoader.js?v=archive-20261109-playback-1';
+import { createGlassStudio } from './studio.js?v=archive-20261109-playback-1';
+import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261109-playback-1';
+import { RectAreaLightUniformsLib } from './vendor/RectAreaLightUniformsLib.js?v=archive-20261109-playback-1';
+import { HDRLoader } from './vendor/HDRLoader.js?v=archive-20261109-playback-1';
 
 let areaLightUsers=0;
 function retainAreaLights(){if(areaLightUsers++===0)RectAreaLightUniformsLib.init();}
@@ -62,12 +62,17 @@ function parseEnvironment(buffer){
 export async function createTree(container, options = {}) {
   const palette = {bg:'#ffffff', ink:'#234236', accent:'#a6dfb6', line:'#91aa9c', ...options.palette};
   const selectionColor=new THREE.Color(options.selectionColor||'#9cddb3');
-  const reduced = options.reducedMotion ?? matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let reduced = options.reducedMotion ?? matchMedia('(prefers-reduced-motion: reduce)').matches;
   const root = document.createElement('div'); root.className='tree-v4';
   Object.assign(root.style,{position:'relative',width:'100%',height:'100%',minHeight:'280px',overflow:'hidden',background:palette.bg});
   container.append(root);
   const abort = new AbortController(), signal=abort.signal, networkAbort=new AbortController();
   let disposed=false, failed=false, paused=false, selected=null, hovered=false, focused=false, dragging=null, manualYaw=0, raf=0, elapsed=reduced?3.2:0, renderedFrames=0;
+  let wake=()=>{},drawRaf=0,frameWindowStart=performance.now();
+  function stopLoop(){cancelAnimationFrame(raf);raf=0;}
+  function pauseMotion(){paused=true;stopLoop();stats.paused=true;}
+  function resumeMotion(){paused=false;stats.paused=false;wake();}
+  function requestDraw(){if(!drawRaf&&!disposed&&!failed)drawRaf=requestAnimationFrame(()=>{drawRaf=0;draw();});}
   let renderer, scene, camera, model, mixer, growth, orbit, envTarget,backdrop,pmrem,areaLightsRetained=false,gpuReleased=false;
   const externalLights=[];
   const picks=[], materials=new Set(), meshes=[], anchors={}, buttons=[];
@@ -84,7 +89,7 @@ export async function createTree(container, options = {}) {
   Object.assign(status.style,{position:'absolute',left:'20px',bottom:'20px',font:'12px sans-serif',color:palette.ink}); root.append(status);
   function emitSelect(id, notify=true){
     if (id!==null && !ids.includes(id)) throw new RangeError('Unknown tree id: '+id);
-    selected=id; stats.selected=id;if(id!==null)paused=true;
+    selected=id; stats.selected=id;if(id!==null)pauseMotion();
     for(const m of meshes){
       const active=m.userData.section===id && id!==null;
       if(m.material.color&&m.userData.restColor){m.material.color.copy(m.userData.restColor);if(active&&!m.userData.glass)m.material.color.lerp(selectionColor,.62);}
@@ -105,18 +110,21 @@ export async function createTree(container, options = {}) {
     stats.anchors=projected;options.onAnchors?.(projected);
   }
   function syncMorphs(){for(const o of meshes)if(o.isInstancedMesh&&o.morphTargetInfluences){for(let i=0;i<o.count;i++)o.setMorphAt(i,o);o.morphTexture.needsUpdate=true;}}
-  function draw(){if(disposed||failed||!renderer||!model)return false;try{if(renderer.getContext().isContextLost())throw new Error('WebGL context lost');updateAnchors();renderer.render(scene,camera);if(renderer.getContext().isContextLost())throw new Error('WebGL context lost');renderedFrames++;stats.drawCalls=renderer.info.render.calls;stats.triangles=renderer.info.render.triangles;stats.yaw=model.rotation.y;stats.paused=paused||hovered||focused;return true;}catch(error){stats.errors.push(String(error));fallback('图形已暂停，可继续选择内容',renderer.getContext().isContextLost()?'context-lost':'render-error');return false;}}
+  function draw(){if(disposed||failed||!renderer||!model)return false;try{if(renderer.getContext().isContextLost())throw new Error('WebGL context lost');updateAnchors();renderer.render(scene,camera);if(renderer.getContext().isContextLost())throw new Error('WebGL context lost');renderedFrames++;const now=performance.now();if(now-frameWindowStart>=1000){stats.fps=Math.round(renderedFrames*1000/(now-frameWindowStart));renderedFrames=0;frameWindowStart=now;}stats.drawCalls=renderer.info.render.calls;stats.triangles=renderer.info.render.triangles;stats.yaw=model.rotation.y;stats.paused=paused;return true;}catch(error){stats.errors.push(String(error));fallback('图形已暂停，可继续选择内容',renderer.getContext().isContextLost()?'context-lost':'render-error');return false;}}
   function resize(){if(!renderer||disposed||failed||!camera)return false;const w=Math.max(1,root.clientWidth),h=Math.max(1,root.clientHeight);renderer.setSize(w,h,false);backdrop?.resize(w,h);const aspect=w/h,v=Math.max(view.height,view.width/aspect);camera.aspect=aspect;camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(v/(2*Math.hypot(.08,.20,3))));camera.updateProjectionMatrix();return draw();}
-  function releaseGPU(){if(gpuReleased)return;gpuReleased=true;cancelAnimationFrame(raf);mixer?.stopAllAction();if(model)mixer?.uncacheRoot(model);disposeObject(scene);materials.forEach(m=>m.dispose());envTarget?.dispose();pmrem?.dispose();backdrop?.dispose();if(areaLightsRetained){releaseAreaLights();areaLightsRetained=false;}renderer?.dispose();renderer?.forceContextLoss();}
+  function releaseGPU(){if(gpuReleased)return;gpuReleased=true;stopLoop();cancelAnimationFrame(drawRaf);drawRaf=0;mixer?.stopAllAction();if(model)mixer?.uncacheRoot(model);disposeObject(scene);materials.forEach(m=>m.dispose());envTarget?.dispose();pmrem?.dispose();backdrop?.dispose();if(areaLightsRetained){releaseAreaLights();areaLightsRetained=false;}renderer?.dispose();renderer?.forceContextLoss();}
   function dispose(){if(disposed)return;disposed=true;stats.ready=false;networkAbort.abort(new DOMException('Tree loading cancelled','AbortError'));abort.abort();observer.disconnect();options.signal?.removeEventListener('abort',cancelFromHost);releaseGPU();root.remove();}
   function cancelFromHost(){if(disposed)return;dispose();state('cancelled',{reason:'aborted'});}
   const observer=new ResizeObserver(resize);observer.observe(container);
-  const api={select:id=>emitSelect(id,false),pause(){paused=true;draw();},resume(){paused=false;draw();},resize,dispose,
-    getStats:()=>structuredClone({...stats,elapsed,paused,hovered,focused,mixerTime:mixer?.time,morph:meshes.find(o=>o.isInstancedMesh)?.morphTargetInfluences}),
+  const api={select:id=>emitSelect(id,false),pause:pauseMotion,resume:resumeMotion,resize,dispose,
+    // Called by A's motion driver: avoid cloning geometry/anchor diagnostics every frame.
+    getMotionState:()=>({ready:stats.ready,elapsed,yaw:model?.rotation.y||0,dragging:!!dragging,paused,reducedMotion:reduced,hovered,focused}),
+    getStats:()=>structuredClone({...stats,elapsed,paused,hovered,focused,dragging:!!dragging,animationFramePending:!!raf,drawFramePending:!!drawRaf,fps:performance.now()-frameWindowStart>1500?0:stats.fps,mixerTime:mixer?.time,morph:meshes.find(o=>o.isInstancedMesh)?.morphTargetInfluences}),
+    setReducedMotion(value){reduced=!!value;if(reduced&&elapsed>=3.2)stopLoop();else wake();},
     setView(name){view=name==='detail'?{height:.63,width:.72,center:[-.20,.66,.02]}:fullView;if(camera){const c=view.center;camera.position.set(c[0]+.08,c[1]-.08,c[2]+3);camera.lookAt(...c);resize();}},
     setLighting(enabled){for(const light of externalLights)light.intensity=enabled?light.userData.power:0;stats.externalLighting=!!enabled;draw();},
-    setAngle(deg){manualYaw=THREE.MathUtils.degToRad(deg);if(model)model.rotation.y=manualYaw;draw();},
-    replay(){elapsed=0;paused=false;manualYaw=0;emitSelect(null,false);growth?.reset().play();},
+    setAngle(deg){if(!Number.isFinite(deg))return;manualYaw=THREE.MathUtils.degToRad(deg);if(!model||Math.abs(model.rotation.y-manualYaw)<1e-7)return;model.rotation.y=manualYaw;draw();},
+    replay(){elapsed=0;paused=false;manualYaw=0;emitSelect(null,false);growth?.reset().play();wake();},
     seek(time){elapsed=time;if(growth){growth.reset().play();mixer.setTime(Math.min(time,stats.animations[0]?.duration||2.2));syncMorphs();}if(model)model.rotation.y=manualYaw;draw();}
   };
   for(const [i,id] of ids.entries()){
@@ -196,25 +204,31 @@ export async function createTree(container, options = {}) {
     const raycaster=new THREE.Raycaster();
     const pick=e=>{const rect=renderer.domElement.getBoundingClientRect();const x=e.clientX-rect.left,y=e.clientY-rect.top;
       const near=anchorIds.map(id=>({id,a:stats.anchors?.[id]})).filter(p=>p.a?.visible).map(p=>({...p,d:Math.hypot(x-p.a.u*rect.width,y-p.a.v*rect.height)})).sort((a,b)=>a.d-b.d)[0];
-      if(near&&near.d<=22){if(noteIds.includes(near.id)){paused=true;options.onNoteSelect?.(near.id);draw();}else emitSelect(near.id);return;}
+      if(near&&near.d<=22){if(noteIds.includes(near.id)){pauseMotion();options.onNoteSelect?.(near.id);draw();}else emitSelect(near.id);return;}
       raycaster.setFromCamera(new THREE.Vector2(x/rect.width*2-1,-y/rect.height*2+1),camera);const hit=raycaster.intersectObjects(picks,false)[0];if(hit)emitSelect(hit.object.userData.section);};
-    renderer.domElement.addEventListener('pointerdown',e=>{dragging={x:e.clientX,y:e.clientY,yaw:model.rotation.y,moved:false};renderer.domElement.setPointerCapture(e.pointerId);},{signal});
-    renderer.domElement.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-dragging.x;if(Math.abs(dx)>4)dragging.moved=true;if(dragging.moved){manualYaw=dragging.yaw+dx*.008;model.rotation.y=manualYaw;draw();}},{signal});
-    renderer.domElement.addEventListener('pointerup',e=>{if(dragging&&!dragging.moved)pick(e);dragging=null;},{signal});
-    renderer.domElement.addEventListener('pointercancel',()=>{dragging=null;},{signal});
+    renderer.domElement.addEventListener('pointerdown',e=>{if(e.button!==0)return;dragging={x:e.clientX,y:e.clientY,yaw:model.rotation.y,moved:false,pointerId:e.pointerId};stopLoop();renderer.domElement.setPointerCapture(e.pointerId);},{signal});
+    renderer.domElement.addEventListener('pointermove',e=>{if(!dragging||e.pointerId!==dragging.pointerId)return;const dx=e.clientX-dragging.x;if(Math.abs(dx)>4)dragging.moved=true;if(dragging.moved){manualYaw=dragging.yaw+dx*.008;model.rotation.y=manualYaw;requestDraw();}},{signal});
+    const endDrag=()=>{dragging=null;wake();};
+    renderer.domElement.addEventListener('pointerup',e=>{if(!dragging||e.pointerId!==dragging.pointerId)return;const click=!dragging.moved;dragging=null;if(click)pick(e);if(renderer.domElement.hasPointerCapture(e.pointerId))renderer.domElement.releasePointerCapture(e.pointerId);wake();},{signal});
+    renderer.domElement.addEventListener('pointercancel',endDrag,{signal});
+    renderer.domElement.addEventListener('lostpointercapture',endDrag,{signal});
     root.addEventListener('pointerenter',()=>{hovered=true;},{signal});root.addEventListener('pointerleave',()=>{hovered=false;},{signal});
     root.addEventListener('focusin',()=>{focused=true;},{signal});root.addEventListener('focusout',e=>{focused=root.contains(e.relatedTarget);},{signal});
-    renderer.domElement.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();api.setAngle(THREE.MathUtils.radToDeg(model.rotation.y)+(e.key==='ArrowLeft'?-5:5));}if(e.key==='Escape')emitSelect(null);if(e.key===' '){e.preventDefault();paused=!paused;}},{signal});
-    let last=performance.now(),frames=0,windowStart=last;
-    function tick(now){if(disposed||failed)return;raf=requestAnimationFrame(tick);const dt=Math.max(0,(now-last)/1000);last=now;
-      if(!document.hidden&&!paused&&!dragging&&(elapsed<2.2||(!reduced&&!hovered&&!focused))){
+    renderer.domElement.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();api.setAngle(THREE.MathUtils.radToDeg(model.rotation.y)+(e.key==='ArrowLeft'?-5:5));}if(e.key==='Escape')emitSelect(null);if(e.key===' '){e.preventDefault();if(!e.repeat){if(options.onToggleMotion)options.onToggleMotion();else if(paused)resumeMotion();else pauseMotion();}}},{signal});
+    let last=performance.now();
+    const shouldAnimate=()=>!disposed&&!failed&&!document.hidden&&!paused&&!dragging&&(elapsed<3.2||!reduced);
+    function tick(now){raf=0;if(!shouldAnimate())return;const dt=Math.min(.1,Math.max(0,(now-last)/1000));last=now;
+      if(shouldAnimate()){
         const prev=elapsed;elapsed+=dt;
         if(prev<2.3){mixer.update(Math.max(0,Math.min(dt,2.2-mixer.time)));syncMorphs();}
         if(elapsed>3.2)model.rotation.y=manualYaw+Math.sin((elapsed-3.2)*Math.PI/10)*THREE.MathUtils.degToRad(25);
         draw();
       }
-      frames++;if(now-windowStart>1000){stats.fps=Math.round(renderedFrames*1000/(now-windowStart));stats.refreshFps=Math.round(frames*1000/(now-windowStart));renderedFrames=0;frames=0;windowStart=now;}
-    }raf=requestAnimationFrame(tick);draw();
+      if(shouldAnimate()&&!raf)raf=requestAnimationFrame(tick);
+    }
+    wake=()=>{if(shouldAnimate()&&!raf){last=performance.now();raf=requestAnimationFrame(tick);}};
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)stopLoop();else wake();},{signal});
+    wake();
   }catch(error){if(disposed||failed)return api;stats.errors.push(String(error));fallback('三维图形未能载入，可继续选择内容',error?.name==='TimeoutError'?'timeout':'load-error');}
   function fallback(message,reason='load-error'){if(disposed||failed)return;failed=true;stats.ready=false;networkAbort.abort(new DOMException('Tree loading stopped','AbortError'));observer.disconnect();renderer?.domElement.remove();releaseGPU();status.textContent=message;root.append(status);const img=document.createElement('img');img.src=here('fallback.png');img.alt='成长之树静态图';Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain'});root.prepend(img);nav.style.display='flex';notify(options.onAnchors,Object.fromEntries(anchorIds.map(id=>[id,{u:.5,v:.5,visible:false}])));state('error',{reason,message});}
   return api;

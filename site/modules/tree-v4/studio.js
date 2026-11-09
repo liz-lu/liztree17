@@ -1,5 +1,5 @@
-import * as THREE from './vendor/three.module.js?v=archive-20261108-loading-1';
-import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261108-loading-1';
+import * as THREE from './vendor/three.module.js?v=archive-20261109-playback-1';
+import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261109-playback-1';
 // A white gallery with broad windows and narrow dark reflection cards.
 // These objects only enter the environment probe, never the visible scene.
 export function createGlassStudio(){

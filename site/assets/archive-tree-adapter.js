@@ -1,4 +1,4 @@
-import { createTree as createBTree } from '../modules/tree-v4/index.js?v=archive-20261108-loading-1';
+import { createTree as createBTree } from '../modules/tree-v4/index.js?v=archive-20261109-playback-1';
 
 // B owns the selected cut model, materials and six authored projection anchors.
 export async function createTree(container, options = {}) {
@@ -9,22 +9,29 @@ export async function createTree(container, options = {}) {
     viewWidth: 1.23,
     pixelRatio: 1.25
   });
-  // Twice B's default oscillation rate, while retaining hover/focus and reader pauses.
-  let stopped=false,disposed=false,raf=0,last=performance.now(),phase=0,center=0,lastAngle=null,ready=false;
+  // One capped presentation clock. Hover/focus is not an instruction to stop.
+  let stopped=false,disposed=false,raf=0,last=0,lastDraw=0,phase=0,center=0,lastAngle=null,ready=false;
+  let reduced=!!options.reducedMotion;
+  const snapshot=()=>tree.getMotionState?.()||tree.getStats();
+  function wake(){if(!disposed&&!stopped&&!reduced&&!raf){last=0;raf=requestAnimationFrame(tick);}}
   function tick(now){
-    if(disposed)return;raf=requestAnimationFrame(tick);const dt=Math.min(.1,(now-last)/1000);last=now;
-    const stats=tree.getStats();if(!stats.ready)return;
+    raf=0;if(disposed||stopped||reduced)return;
+    raf=requestAnimationFrame(tick);
+    if(now-lastDraw<1000/30)return;
+    const dt=last?Math.min(.1,(now-last)/1000):0;last=now;lastDraw=now;
+    const stats=snapshot();if(!stats.ready)return;
     if(!ready){if(stats.elapsed<3.2)return;ready=true;center=stats.yaw*180/Math.PI;tree.pause();}
-    if(stopped||options.reducedMotion||document.hidden||stats.hovered||stats.focused)return;
+    if(document.hidden||stats.dragging)return;
     const current=stats.yaw*180/Math.PI;
     if(lastAngle!==null&&Math.abs(current-lastAngle)>.2)center=current-Math.sin(phase)*25;
     phase+=dt*Math.PI/5;lastAngle=center+Math.sin(phase)*25;tree.setAngle(lastAngle);
   }
-  raf=requestAnimationFrame(tick);
+  wake();
   return {...tree,
-    pause(){stopped=true;tree.pause();},
-    resume(){stopped=false;if(!ready)tree.resume();else tree.pause();},
-    select(id){tree.select(id);if(id!==null)stopped=true;},
+    pause(){stopped=true;cancelAnimationFrame(raf);raf=0;last=0;tree.pause();},
+    resume(){stopped=false;if(!ready)tree.resume();else tree.pause();wake();},
+    setReducedMotion(value){reduced=!!value;tree.setReducedMotion?.(reduced);if(reduced){cancelAnimationFrame(raf);raf=0;}else wake();},
+    select(id){tree.select(id);},
     dispose(){disposed=true;cancelAnimationFrame(raf);tree.dispose();}
   };
 }
