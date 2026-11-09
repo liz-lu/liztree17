@@ -1,10 +1,10 @@
-import { mountWebPreview } from './archive-web-preview.js?v=archive-20261109-playback-1';
-import { groups } from './data.js?v=archive-20261109-playback-1';
-import { details } from './details.js?v=archive-20261109-playback-1';
-import { mountProjectMedia } from './project-media.js?v=archive-20261109-playback-1';
-import { integrations } from './archive-integrations.js?v=archive-20261109-playback-1';
-import { mountMicrographics } from './archive-micrographics.js?v=archive-20261109-playback-1';
-import { mountProgressiveTree } from './archive-loading.js?v=archive-20261109-playback-1';
+import { mountWebPreview } from './archive-web-preview.js?v=archive-20261109-layout-1';
+import { groups } from './data.js?v=archive-20261109-layout-1';
+import { details } from './details.js?v=archive-20261109-layout-1';
+import { mountProjectMedia } from './project-media.js?v=archive-20261109-layout-1';
+import { integrations } from './archive-integrations.js?v=archive-20261109-layout-1';
+import { mountMicrographics } from './archive-micrographics.js?v=archive-20261109-layout-1';
+import { mountProgressiveTree } from './archive-loading.js?v=archive-20261109-layout-1';
 mountMicrographics();
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -456,7 +456,7 @@ async function attachModule(kind,path){
   if(kind==='tree'){
     mountProgressiveTree(host,async(mount,lifecycle)=>{
       let module;
-      try{module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261109-playback-1',import.meta.url)).href);}
+      try{module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261109-layout-1',import.meta.url)).href);}
       catch(error){error.reloadPage=true;throw error;}
       if(lifecycle.signal.aborted)throw new Error('Tree load cancelled');
       return module.createTree(mount,{
@@ -472,7 +472,7 @@ async function attachModule(kind,path){
     return;
   }
   try{
-    const module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261109-playback-1',import.meta.url)).href);
+    const module=await import(new URL(path,new URL('./archive-integrations.js?v=archive-20261109-layout-1',import.meta.url)).href);
     host.replaceChildren();
     const controller=await module[kind==='tree'?'createTree':'createLocation'](host,{
       palette,reducedMotion:reduced.matches,showControls:false,
@@ -491,13 +491,13 @@ async function attachModule(kind,path){
 async function attachVisuals(path){
   if(!path)return;
   try{
-    const url=new URL(path,new URL('./archive-integrations.js?v=archive-20261109-playback-1',import.meta.url));const response=await fetch(url,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Visual manifest unavailable');
+    const url=new URL(path,new URL('./archive-integrations.js?v=archive-20261109-layout-1',import.meta.url));const response=await fetch(url,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Visual manifest unavailable');
     const manifest=await response.json();const assets=Array.isArray(manifest)?manifest:manifest.assets;
     if(!Array.isArray(assets))throw new Error('Visual manifest needs assets array');
     const readyAssets=assets.filter(a=>!a.temporary);
     // The hero is already in HTML. Decorative animation is an independent enhancement.
     const animated=(async()=>{
-      const motion=await import(new URL('motion.js?v=archive-20261109-playback-1',url));
+      const motion=await import(new URL('motion.js?v=archive-20261109-layout-1',url));
       const runner=$('[data-visual-slot="runner"]');if(runner){runner.replaceChildren();visualControllers.push(motion.createVisual(runner,{kind:'runner',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));}
       const touch=$('[data-visual-slot="touch"]');if(touch&&readyAssets.some(a=>a.id==='tech-touch')){touch.replaceChildren();visualControllers.push(motion.createVisual(touch,{kind:'touch',autoplay:true,controls:false,palette,reducedMotion:reduced.matches}));}
     })();

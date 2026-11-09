@@ -1,9 +1,9 @@
-import * as THREE from './vendor/three.module.js?v=archive-20261109-playback-1';
-import { GLTFLoader } from './vendor/GLTFLoader.js?v=archive-20261109-playback-1';
-import { createGlassStudio } from './studio.js?v=archive-20261109-playback-1';
-import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261109-playback-1';
-import { RectAreaLightUniformsLib } from './vendor/RectAreaLightUniformsLib.js?v=archive-20261109-playback-1';
-import { HDRLoader } from './vendor/HDRLoader.js?v=archive-20261109-playback-1';
+import * as THREE from './vendor/three.module.js?v=archive-20261109-layout-1';
+import { GLTFLoader } from './vendor/GLTFLoader.js?v=archive-20261109-layout-1';
+import { createGlassStudio } from './studio.js?v=archive-20261109-layout-1';
+import { createExhibitionRoom } from './exhibition-room.js?v=archive-20261109-layout-1';
+import { RectAreaLightUniformsLib } from './vendor/RectAreaLightUniformsLib.js?v=archive-20261109-layout-1';
+import { HDRLoader } from './vendor/HDRLoader.js?v=archive-20261109-layout-1';
 
 let areaLightUsers=0;
 function retainAreaLights(){if(areaLightUsers++===0)RectAreaLightUniformsLib.init();}

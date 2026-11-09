@@ -1,4 +1,4 @@
-import * as THREE from './vendor/three.module.js?v=archive-20261109-playback-1';
+import * as THREE from './vendor/three.module.js?v=archive-20261109-layout-1';
 
 /** White exhibition room; spatial joints and glass reflections provide depth. */
 export function createExhibitionRoom({probe=false,blendColor=null}={}){

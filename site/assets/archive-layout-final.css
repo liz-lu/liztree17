@@ -89,3 +89,34 @@ body.archive-v4{width:var(--archive-width,1064px);zoom:var(--archive-zoom,1)}
 .web-snapshot{overflow:auto;overscroll-behavior:contain}.web-snapshot img{display:block;width:100%;height:auto}
 
 .future-particle-host{width:100%;aspect-ratio:580/420;border:1px solid var(--line);background:rgba(255,255,255,.45);background-image:linear-gradient(rgba(39,135,103,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(39,135,103,.06) 1px,transparent 1px);background-size:35px 35px}
+
+/* 2026-11-09: one shared frame, matching the user's four-window sketch. */
+#location .location-layout{--location-card-width:clamp(206px,calc(var(--archive-width,1064px) * .172),250px);--location-card-height:calc(var(--location-card-width) * 1.2);grid-template-columns:var(--location-card-width) minmax(0,1fr) var(--location-card-width);column-gap:clamp(18px,calc(var(--archive-width,1064px) * .018),28px)}
+#location .location-layout .card-column{padding:42px 0 0;gap:24px;justify-content:flex-start;min-width:0}
+#location .location-layout .instrument-card{width:100%;height:var(--location-card-height);min-height:0;aspect-ratio:5/6;margin:0;align-self:stretch;display:flex;flex-direction:column}
+#location .instrument-title{flex:0 0 22px;font-size:7px;letter-spacing:.025em;padding:3px 6px;gap:6px}
+#location .instrument-inner{flex:1;min-height:0;padding:12px 12px 10px}
+#location .instrument-foot{display:flex;flex-shrink:0;margin:0 8px;padding:6px 0 5px;font-size:6px;line-height:1.5}
+#location .profile-card h3{font-size:16px;line-height:1.45;letter-spacing:-.025em;margin-bottom:10px;text-wrap:balance}
+#location .profile-card .profile-summary{font-size:12px;line-height:1.75;text-wrap:pretty}
+#location .gesture-card .instrument-inner,#location .motion-card .instrument-inner{padding:8px;display:flex}
+#location .interface-graphic,#location .runner-slot{width:100%;height:100%;min-height:0;flex:1;margin:0;aspect-ratio:auto}
+#location .skills-card .instrument-inner{padding:11px 10px 9px}
+#location .skills-card .card-kicker{font-size:10px;margin-bottom:10px}
+#location .skills-visual-layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;flex:1;min-height:0}
+#location .method-list button{grid-template-columns:12px minmax(0,1fr);grid-template-rows:auto 9px;gap:3px 2px;font-size:11px;line-height:1.35;padding:4px 0}
+#location .method-list small{font-size:7px}
+#location .method-list button i{height:9px;grid-template-rows:repeat(2,4px);gap:1px}
+#location .method-list button i b{height:4px}
+#location .scene-label{padding:12px 0 14px;min-height:42px}
+#location .location-host{height:calc(var(--location-card-height) * 2 + 24px);overflow:hidden}
+#location .location-v4__stage{transform:scale(1.16);transform-origin:50% 50%}
+#location .city-selector{padding-top:10px}
+#location .city-note{padding-top:14px;min-height:70px}
+#location .profile-card .instrument-inner{display:flex;flex-direction:column;justify-content:space-between;padding:10px 13px;gap:5px}
+#location .profile-card h3{margin:0;font-size:16px;line-height:1.4;font-weight:500;text-wrap:initial}
+#location .profile-card .profile-background{font-size:10px;line-height:1.5;color:var(--muted);padding-left:8px;border-left:1px solid var(--line)}
+#location .profile-card .profile-summary{font-size:11px;line-height:1.65;text-wrap:pretty}
+#location .profile-summary span{display:block;margin-top:5px}
+#location .profile-summary .profile-closing{font-size:10px;color:var(--accent-strong);margin-top:8px}
+#location .method-list small{align-self:center}
